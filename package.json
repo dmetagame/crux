@@ -6,7 +6,8 @@
     "start": "next start",
     "lint": "eslint .",
     "generate-wallets": "node --experimental-transform-types --no-warnings generate-wallets.mts",
-    "agent": "node --experimental-transform-types --no-warnings --env-file=.env.local agent.mts"
+    "agent": "node --experimental-transform-types --no-warnings --env-file=.env.local agent.mts",
+    "research-agent": "node --experimental-transform-types --no-warnings --env-file=.env.local research-agent.mts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^2.0.4",
@@ -20,6 +21,7 @@
     "@supabase/supabase-js": "^2.99.0",
     "@x402/core": "^2.6.0",
     "@x402/evm": "^2.6.0",
+    "ai": "^6.0.208",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "deepagents": "^1.8.2",
