@@ -42,7 +42,46 @@ interface PaymentPayload {
   extensions?: Record<string, unknown>;
 }
 
-function buildPaymentRequirements(price: string) {
+// The facilitator rejects authorizations whose validity window is shorter than
+// its `minValiditySeconds` (currently 604800 = 7d) with `authorization_validity_too_short`.
+// The client signs validBefore = now + maxTimeoutSeconds, and sitting exactly at the
+// minimum still fails once facilitator-side clock latency is added — so we read the live
+// minimum from /v1/x402/supported and add a margin, rather than hardcoding a magic number
+// that silently breaks if Circle raises the floor again.
+const VALIDITY_MARGIN_SECONDS = 86400; // 1 day above the facilitator's minimum
+const FALLBACK_MAX_TIMEOUT_SECONDS = 691200; // 8d, used if discovery fails
+
+let cachedMaxTimeoutSeconds: Promise<number> | null = null;
+
+function getMaxTimeoutSeconds(): Promise<number> {
+  if (!cachedMaxTimeoutSeconds) {
+    cachedMaxTimeoutSeconds = (async () => {
+      try {
+        const supported = await facilitator.getSupported();
+        const kind = supported?.kinds?.find(
+          (k: { network?: string }) => k.network === ARC_TESTNET_NETWORK,
+        );
+        const min = kind?.extra?.minValiditySeconds;
+        if (typeof min === "number" && min > 0) {
+          return min + VALIDITY_MARGIN_SECONDS;
+        }
+        console.warn(
+          "[x402] minValiditySeconds not found for Arc; using fallback",
+        );
+      } catch (err) {
+        console.error(
+          "[x402] getSupported failed; using fallback maxTimeoutSeconds:",
+          (err as Error).message,
+        );
+        cachedMaxTimeoutSeconds = null; // allow retry on next request
+      }
+      return FALLBACK_MAX_TIMEOUT_SECONDS;
+    })();
+  }
+  return cachedMaxTimeoutSeconds;
+}
+
+function buildPaymentRequirements(price: string, maxTimeoutSeconds: number) {
   // Parse dollar amount to USDC atomic units (6 decimals)
   const amount = Math.round(parseFloat(price.replace("$", "")) * 1_000_000);
 
@@ -52,7 +91,7 @@ function buildPaymentRequirements(price: string) {
     asset: ARC_TESTNET_USDC,
     amount: amount.toString(),
     payTo: sellerAddress,
-    maxTimeoutSeconds: 345600,
+    maxTimeoutSeconds,
     extra: {
       name: "GatewayWalletBatched",
       version: "1",
@@ -72,9 +111,11 @@ export function withGateway(
   price: string,
   endpoint: string,
 ) {
-  const requirements = buildPaymentRequirements(price);
-
   return async (req: NextRequest) => {
+    const requirements = buildPaymentRequirements(
+      price,
+      await getMaxTimeoutSeconds(),
+    );
     const paymentSignature = req.headers.get("payment-signature");
 
     // No payment — return 402 with Gateway batching payment requirements
@@ -114,6 +155,9 @@ export function withGateway(
       );
 
       if (!verifyResult.isValid) {
+        console.error(
+          `[x402] verify failed for ${endpoint}: ${verifyResult.invalidReason}`,
+        );
         return NextResponse.json(
           {
             error: "Payment verification failed",
