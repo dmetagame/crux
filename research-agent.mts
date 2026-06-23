@@ -14,12 +14,14 @@
 import { generateText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
-import { catalog } from "./lib/marketplace.ts";
+import { catalog, getPreview } from "./lib/marketplace.ts";
+import { scoreBrief } from "./lib/score.ts";
 
 const MODEL = process.env.MODEL ?? "anthropic/claude-haiku-4.5";
 const TOPIC = process.env.TOPIC ?? "Northwind Logistics";
 const BUDGET = parseFloat(process.env.BUDGET ?? "0.05");
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
+const SEED = process.env.SEED ?? "demo";
 
 const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}`;
 if (!buyerKey) throw new Error("Missing BUYER_PRIVATE_KEY");
@@ -57,11 +59,13 @@ const tools = {
   }),
   preview: tool({
     description:
-      "Get the free preview + metadata for one source before deciding whether to pay. Free to call.",
+      "Get the free preview/sample for one source before deciding whether to pay. " +
+      "The catalog listing does NOT include previews — use this to inspect a source. Free to call.",
     inputSchema: z.object({ sourceId: z.string() }),
     execute: async ({ sourceId }) => {
-      const s = catalog().find((c) => c.id === sourceId);
-      return s ?? { error: `Unknown source: ${sourceId}` };
+      const meta = catalog().find((c) => c.id === sourceId);
+      if (!meta) return { error: `Unknown source: ${sourceId}` };
+      return { id: sourceId, name: meta.name, hasPreview: meta.hasPreview, preview: getPreview(sourceId).preview };
     },
   }),
   check_budget: tool({
@@ -91,7 +95,7 @@ const tools = {
           error: `Refused: would exceed budget. Remaining ${round(BUDGET - spent)} USDC, price ${meta.priceUsdc}.`,
         };
       }
-      const url = `${BASE}${meta.purchaseUrl}?topic=${encodeURIComponent(TOPIC)}`;
+      const url = `${BASE}${meta.purchaseUrl}?topic=${encodeURIComponent(TOPIC)}&seed=${encodeURIComponent(SEED)}`;
       const res = await gateway.pay(url, { method: "GET" });
       const data = res.data as { delivered: boolean; content: string };
       spent += meta.priceUsdc;
@@ -137,7 +141,7 @@ const system =
   `unverified sources with skepticism and corroborate red flags where you can.\n\n` +
   `When finished, call submit_brief with the brief and the key facts you established.`;
 
-console.log(`\nAgent: ${MODEL}  |  Topic: ${TOPIC}  |  Budget: $${BUDGET}\n`);
+console.log(`\nAgent: ${MODEL}  |  Topic: ${TOPIC}  |  Budget: $${BUDGET}  |  Seed: ${SEED}\n`);
 
 const result = await generateText({
   model: MODEL,
@@ -160,3 +164,16 @@ for (const e of ledger) {
 }
 console.log(`\nTotal spent: $${round(spent)} / $${BUDGET} budget   (purchases: ${ledger.length})`);
 console.log(`LLM steps: ${result.steps.length}   tokens: ${result.usage?.totalTokens ?? "?"}`);
+
+const score = scoreBrief(finalBrief, finalFacts);
+console.log("\n" + "=".repeat(70));
+console.log("SCORE vs ground truth");
+console.log(
+  `  Facts captured: ${score.capturedFacts.map((f) => f.id).join(", ") || "none"} (${score.capturedFacts.length}/5)`,
+);
+if (score.missedFacts.length) {
+  console.log(`  Missed: ${score.missedFacts.map((f) => f.id).join(", ")}`);
+}
+console.log(`  Weighted coverage: ${score.weighted}/${score.maxWeighted} (${Math.round(score.coverage * 100)}%)`);
+console.log(`  False claim ingested: ${score.falseClaim ? "YES (the acquisition rumor)" : "no"}`);
+console.log(`  => ${Math.round(score.coverage * 100)}% coverage for $${round(spent)} spent`);

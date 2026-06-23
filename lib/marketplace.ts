@@ -100,7 +100,7 @@ export const SOURCES: SourceMeta[] = [
     reliabilityLabel: "99%",
     hasPreview: true,
     preview:
-      "Auto-summary of public headlines (overlaps the Sector News Feed). Sample: 'Company reports strong growth this year.'",
+      "Auto-generated summary of public headlines. Sample: 'Company reports strong growth this year.'",
   },
   {
     id: "social-sentiment",
@@ -168,36 +168,40 @@ function isDemoTopic(topic: string): boolean {
   return topic.trim().toLowerCase().includes("northwind");
 }
 
-/** Full (good) payload per source for the demo topic. */
+/**
+ * Full (good) payload per source for the demo topic. Written to read like real
+ * source material — no answer-key tags or self-labels. The mapping from content
+ * to ground-truth facts lives only in the scorer (lib/score.ts).
+ */
 const DEMO_CONTENT: Record<string, string> = {
   financials:
-    "Audited FY2026 financials for Northwind Logistics. Revenue $2.10B, up 40.2% YoY (F1). " +
-    "Cash & equivalents $180M against $45M total debt — strong, low-leverage balance sheet (F4). " +
-    "Operating margin 11.4%. No going-concern qualifications in the audit opinion.",
+    "Audited financial statements, Northwind Logistics, fiscal year 2026. Revenue of $2.10 billion, " +
+    "up 40.2% from the prior year. Cash and equivalents of $180 million against total debt of $45 million. " +
+    "Operating margin 11.4%. The independent auditor's opinion contains no going-concern qualification.",
   "premium-analysis":
-    "Analyst diligence memo — Northwind Logistics. Three material concerns: (1) the CEO departed " +
-    "abruptly in Q2 2026 with no permanent successor named (F2); (2) the company is under SEC " +
-    "investigation regarding revenue-recognition timing (F3); (3) revenue is concentrated — the " +
-    "single largest customer represents ~35% of total revenue (F5). Recommend caution pending resolution.",
+    "Diligence memo — Northwind Logistics. We flag three material concerns. First, the chief executive " +
+    "departed abruptly in the second quarter of 2026 and no permanent successor has been named. Second, " +
+    "the company has disclosed that the SEC's Division of Enforcement is examining the timing of certain " +
+    "revenue recognition. Third, customer concentration is high — the single largest customer accounts for " +
+    "roughly 35% of total revenue. We recommend caution pending resolution of these items.",
   "raw-filings":
-    "Form 8-K / litigation exhibits (dense legal text). Buried in Item 8.01: '...the Company received " +
-    "a formal order of investigation from the Division of Enforcement concerning the timing of certain " +
-    "revenue recognition...' (F3). Requires careful reading to extract.",
+    "Form 8-K, Item 8.01 (Other Events): '...the Company received a formal order of investigation from the " +
+    "Division of Enforcement concerning the timing of certain revenue recognition during the periods under " +
+    "review...'. The surrounding exhibits are procedural and densely worded.",
   "sector-news":
-    "SECTOR FEED: 'Logistics demand rebounds in 2026.' 'Northwind posts record quarter, revenue up ~40% (F1).' " +
-    "'Freight rates stabilize.' 'Analysts debate sector multiples.' (Mostly headline-level; no governance or regulatory detail.)",
+    "Logistics demand rebounded across 2026. Northwind posted a record quarter, with revenue up roughly 40%. " +
+    "Freight rates have stabilized after last year's volatility, and analysts continue to debate sector valuation multiples.",
   "cheap-digest":
-    "AUTO-DIGEST: 'Northwind reported strong growth this year, with revenue up about 40% (F1).' " +
-    "(Generated from the same public headlines as the Sector News Feed — largely redundant with it.)",
+    "Northwind reported strong growth this year, with revenue up about 40%. Overall a solid performance in a recovering freight market.",
   "social-sentiment":
-    "Social sentiment for Northwind: 52/100 (mixed), trend flat. Chatter volume moderate. " +
-    "No specific, verifiable claims — mood signal only.",
+    "Aggregate social sentiment for Northwind: 52 out of 100 (mixed), trend flat. Moderate chatter volume. " +
+    "No specific or verifiable claims — a mood signal only.",
   "insider-interview":
-    "Interview transcript (former operations lead): 'The leadership change in Q2 caught everyone off guard (F2). " +
-    "And honestly, lose the top account and the numbers look very different — it's a big chunk of revenue (F5).'",
+    "Interview with a former operations lead. 'The leadership change in Q2 caught everyone off guard. " +
+    "And honestly, if we lost the top account the numbers would look very different — it's a big chunk of our revenue.'",
   "rumor-wire":
-    "RUMOR WIRE: 'Sources say a major acquisition of Northwind is imminent at a huge premium!!' " +
-    "(UNVERIFIED and, per ground truth, FALSE — no such deal exists. Pure noise / misleading.)",
+    "Word going around is that a major acquisition of Northwind is imminent, reportedly at a big premium. " +
+    "Nothing official, but people are talking.",
 };
 
 /** Degraded payload when an unreliable source fails to deliver. */
@@ -218,18 +222,37 @@ export interface SourceResult {
   content: string;
 }
 
+/** Deterministic [0,1) hash of a string (FNV-1a) — for reproducible runs. */
+function seededUnit(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return (h >>> 0) / 4294967296;
+}
+
 /**
- * Produce the paid payload for a source on a topic. Applies the reliability
- * simulation: an unreliable source returns degraded content with probability
- * (1 - reliability), even though payment still settles.
+ * Produce the paid payload for a source on a topic. The reliability simulation
+ * is DETERMINISTIC under a given seed so demo runs and baseline comparisons are
+ * reproducible: highly-reliable sources always deliver; only sub-0.9 sources
+ * (the insider interview) swing, decided by a seeded hash. Payment settles
+ * regardless of whether usable content is returned.
  */
-export function getSourceContent(id: string, topic: string): SourceResult {
+export function getSourceContent(
+  id: string,
+  topic: string,
+  seed = "demo",
+): SourceResult {
   const source = SOURCES.find((s) => s.id === id);
   if (!source) {
     throw new Error(`Unknown source: ${id}`);
   }
 
-  const delivered = Math.random() < source.reliability;
+  const delivered =
+    source.reliability >= 0.9
+      ? true
+      : seededUnit(`${id}:${topic}:${seed}`) < source.reliability;
 
   let content: string;
   if (!isDemoTopic(topic)) {
@@ -255,7 +278,11 @@ export function getSourceContent(id: string, topic: string): SourceResult {
   };
 }
 
-/** Public catalog view — metadata + free preview only, never paid content. */
+/**
+ * Public catalog view — metadata only, NO preview text and never paid content.
+ * Withholding the preview forces the agent to actively decide what to inspect
+ * via the separate preview() tool, rather than being handed every sample.
+ */
 export function catalog() {
   return SOURCES.map((s) => ({
     id: s.id,
@@ -266,7 +293,15 @@ export function catalog() {
     advertisedQuality: s.advertisedQuality,
     reliability: s.reliabilityLabel,
     hasPreview: s.hasPreview,
-    preview: s.preview,
     purchaseUrl: `/api/research/${s.id}`,
   }));
+}
+
+/** Free preview/sample for one source (the agent's preview() tool). */
+export function getPreview(id: string): { id: string; preview: string | null } {
+  const source = SOURCES.find((s) => s.id === id);
+  if (!source) {
+    throw new Error(`Unknown source: ${id}`);
+  }
+  return { id, preview: source.preview };
 }

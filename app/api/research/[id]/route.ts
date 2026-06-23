@@ -20,8 +20,10 @@ export async function GET(
 
   const endpoint = `/api/research/${id}`;
   const handler = async (r: NextRequest) => {
-    const topic = new URL(r.url).searchParams.get("topic") ?? "northwind logistics";
-    return NextResponse.json(getSourceContent(id, topic));
+    const params = new URL(r.url).searchParams;
+    const topic = params.get("topic") ?? "northwind logistics";
+    const seed = params.get("seed") ?? "demo";
+    return NextResponse.json(getSourceContent(id, topic, seed));
   };
 
   return withGateway(handler, source.price, endpoint)(req);
