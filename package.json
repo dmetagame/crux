@@ -7,7 +7,8 @@
     "lint": "eslint .",
     "generate-wallets": "node --experimental-transform-types --no-warnings generate-wallets.mts",
     "agent": "node --experimental-transform-types --no-warnings --env-file=.env.local agent.mts",
-    "research-agent": "node --experimental-transform-types --no-warnings --env-file=.env.local research-agent.mts"
+    "research-agent": "node --experimental-transform-types --no-warnings --env-file=.env.local research-agent.mts",
+    "compare": "node --experimental-transform-types --no-warnings --env-file=.env.local compare.mts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^2.0.4",
