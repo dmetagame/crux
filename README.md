@@ -1,187 +1,139 @@
-# Arc Nanopayments Demo
+# Lepton — Autonomous Paying Research Agent
 
-Demonstrate gasless USDC nanopayments using [Circle Nanopayments](https://www.circle.com/nanopayments) on Arc. A **LangChain agent** acts as the buyer, autonomously paying for paywalled resources, while a **Next.js web app** acts as the seller, exposing x402-protected endpoints and providing a seller dashboard to monitor payments and withdraw earnings.
+> An AI agent that researches a company under a strict USDC budget, paying for
+> information with real nanopayments that settle on **Arc**. The spending
+> **judgment** is the product — not the report.
 
-Circle Gateway batches many signed offchain authorizations into a single onchain settlement, enabling economically viable sub-cent payments.
+Entry for **RFB-01 (Autonomous Paying Agents)** of the Lepton Agents Hackathon
+(Canteen × Circle on Arc). Every purchase below is a real x402 nanopayment that
+settles on Arc testnet through Circle Gateway batching.
 
-<img alt="Arc Nanopayments Demo dashboard" src="public/screenshot.png" />
+---
 
-## Table of Contents
+## The idea: paying judgment as the product
 
-- [Prerequisites](#prerequisites)
-- [Getting Started](#getting-started)
-- [How It Works](#how-it-works)
-- [Paywalled Endpoints](#paywalled-endpoints)
-- [Seller Dashboard](#seller-dashboard)
-- [Environment Variables](#environment-variables)
-- [Demo Credentials](#demo-credentials)
+This is **not** "a research agent." It's an autonomous **paying** agent whose
+*spending decisions* are the deliverable — the brief is just the vehicle.
 
-## Prerequisites
+The agent is given a due-diligence task and a **strict USDC budget**, and faces a
+marketplace of paid sources deliberately built so that **no fixed heuristic
+wins**:
 
-- **Node.js v22+** — Install via [nvm](https://github.com/nvm-sh/nvm)
-- **Supabase CLI** — Install via `npm install -g supabase` or see [Supabase CLI docs](https://supabase.com/docs/guides/cli/getting-started)
-- **Docker Desktop** (only if using the local Supabase path) — [Install Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- *(Optional)* An **[OpenAI API key](https://platform.openai.com/api-keys)** — enables the LLM-driven payment agent. Without it, the agent runs in mock mode with scripted tool calls.
+- **price ≠ quality** — some cheap sources are signal, some pricey ones are noise;
+- **free previews** on some sources — the agent must judge value *before* paying;
+- **overlap** — two cheap sources are near-duplicates (dedup matters);
+- **an unreliable source** that takes payment and sometimes returns nothing;
+- **a misleading source** — cheap, advertises "high quality", reports a *false*
+  acquisition rumor;
+- **a "wolf in sheep's clothing"** — metadata identical to the best source, but
+  its preview reveals it's industry-macro, useless for *this* company.
 
-## Getting Started
+Only context-sensitive reasoning — previewing, matching source to question,
+skipping traps, stopping when enough — spends the budget well. That is what makes
+a real LLM load-bearing here, rather than decorative.
 
-1. Clone the repository and install dependencies:
+## Proof it reasons (not just transacts)
 
-   ```bash
-   git clone https://github.com/akelani-circle/arc-nanopayments-demo.git
-   cd arc-nanopayments-demo
-   npm install
-   ```
+`npm run compare` runs the reasoning agent against two naive heuristics on the
+**same marketplace, budget, and seed** — all paying real USDC on Arc — and scores
+each brief against ground truth:
 
-2. Set up environment variables:
-
-   ```bash
-   cp .env.example .env.local
-   ```
-
-   Then edit `.env.local` and fill in all required values (see [Environment Variables](#environment-variables) section below).
-
-3. Generate seller and buyer wallets:
-
-   ```bash
-   npm run generate-wallets
-   ```
-
-   This creates two EVM wallets (seller and buyer) and writes the addresses and private keys to `.env.local`. Follow the on-screen instructions to fund the buyer wallet with testnet USDC via the [Circle faucet](https://faucet.circle.com/).
-
-4. Set up the database — Choose one of the two paths below:
-
-   <details>
-   <summary><strong>Path 1: Local Supabase (Docker)</strong></summary>
-
-   Requires Docker Desktop installed and running.
-
-   ```bash
-   npx supabase start
-   npx supabase migration up
-   ```
-
-   The output of `npx supabase start` will display the Supabase URL and API keys needed for your `.env.local`.
-
-   </details>
-
-   <details>
-   <summary><strong>Path 2: Remote Supabase (Cloud)</strong></summary>
-
-   Requires a [Supabase](https://supabase.com/) account and project.
-
-   ```bash
-   npx supabase link --project-ref <your-project-ref>
-   npx supabase db push
-   ```
-
-   Retrieve your project URL and API keys from the Supabase dashboard under **Settings > API**.
-
-   </details>
-
-5. Start the development server:
-
-   ```bash
-   npm run dev
-   ```
-
-   The app will be available at `http://localhost:3000`.
-
-6. Run the AI payment agent:
-
-   ```bash
-   npm run agent
-   ```
-
-   The agent uses the buyer wallet to purchase resources from the x402-protected premium endpoints, paying with USDC on the Arc Testnet. If `OPENAI_API_KEY` is set, the agent uses the LLM to decide which tools to call; otherwise it falls back to a scripted mock run. You can optionally pass a custom query:
-
-   ```bash
-   npm run agent -- "Buy me a quote at http://localhost:3000/api/premium/quote"
-   ```
-
-   To set a USDC spending limit, use the `--limit` flag. The agent will pause when the limit is reached and prompt for additional allowance:
-
-   ```bash
-   npm run agent -- --limit 0.5
-   ```
-
-## How It Works
-
-- Built with [Next.js](https://nextjs.org/) App Router and [Supabase](https://supabase.com/)
-- Uses the [x402 protocol](https://www.x402.org/) for HTTP 402 nanopayments with USDC on the [Arc Network](https://arc.circle.com/)
-- Uses [Circle's x402 batching SDK](https://www.npmjs.com/package/@circle-fin/x402-batching) (`GatewayClient`) for gasless payment facilitation
-- Includes an AI payment agent built with [LangChain](https://js.langchain.com/) and [Deep Agents](https://www.npmjs.com/package/deepagents) that can check balances, deposit USDC into Gateway, verify endpoint support, and autonomously pay for x402-protected resources
-- Seller dashboard with real-time payment monitoring, Gateway balance display, and cross-chain withdrawal support
-- Payment events and withdrawals are persisted to Supabase with real-time subscriptions
-- Styled with [Tailwind CSS](https://tailwindcss.com) and components from [shadcn/ui](https://ui.shadcn.com/)
-
-## Paywalled Endpoints
-
-The seller exposes several x402-protected API routes at different price points:
-
-| Endpoint | Method | Price (USDC) | Description |
-| --- | --- | --- | --- |
-| `/api/premium/quote` | GET | $0.001 | Returns a premium inspirational quote |
-| `/api/premium/dataset` | GET | $0.01 | Returns a small JSON analytics dataset |
-| `/api/premium/compute` | POST | $0.0003 | Performs text analysis on submitted content |
-| `/api/premium/agent-task` | GET | $0.03 | Returns a clue/step for a treasure hunt task |
-
-Each endpoint returns `402 Payment Required` for unpaid requests. The buyer agent automatically signs the authorization and retries with the payment signature to receive the content.
-
-## Seller Dashboard
-
-The dashboard at `/dashboard` provides:
-
-- **Gateway Balance** — Top-bar badge showing the seller's available Gateway balance, with a detail dialog for total, withdrawing, withdrawable, and wallet USDC balances
-- **Payments Table** — Real-time list of incoming nanopayments with filtering and sorting, linked to [Arc Testnet Explorer](https://testnet.arcscan.app)
-- **Withdraw Dialog** — Withdraw available USDC from Gateway to a wallet address on any supported testnet chain (Arc Testnet, Base Sepolia, Ethereum Sepolia, Arbitrum Sepolia, Optimism Sepolia, Avalanche Fuji, Polygon Amoy)
-
-## Environment Variables
-
-Copy `.env.example` to `.env.local` and fill in the required values:
-
-```bash
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your-project-url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# x402 / Circle Nanopayments
-SELLER_ADDRESS=0xYourWalletAddress
-SELLER_PRIVATE_KEY=0xYourSellerPrivateKey
-
-# Buyer wallet (for the payment agent)
-BUYER_ADDRESS=0xYourBuyerWalletAddress
-BUYER_PRIVATE_KEY=0xYourBuyerPrivateKey
-
-# AI Payment Agent (optional — omit to run in mock mode)
-# OPENAI_API_KEY=your-openai-api-key
+```
+Strategy              Spent   Buys   Facts       Coverage  False claim
+reasoning-agent      $0.045      3     5/5   11/11 (100%)  no
+buy-cheapest        $0.0388      7     3/5     6/11 (55%)  YES (rumor)
+buy-by-quality      $0.0353      4     3/5     6/11 (55%)  YES (rumor)
 ```
 
-| Variable | Scope | Purpose |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Public | Supabase project URL. |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public | Supabase anonymous / publishable key. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-side | Supabase service-role key, used to record payment events and withdrawals. |
-| `SELLER_ADDRESS` | Server-side | EVM wallet address for receiving USDC payments. |
-| `SELLER_PRIVATE_KEY` | Server-side | Seller wallet private key, used for Gateway balance queries and withdrawals. |
-| `BUYER_ADDRESS` | Agent | Buyer wallet address for making payments. |
-| `BUYER_PRIVATE_KEY` | Agent | Buyer wallet private key for signing payment authorizations. |
-| `OPENAI_API_KEY` | Agent | *(Optional)* OpenAI API key. If omitted, the agent runs in mock mode with scripted tool calls. |
+Both heuristics spend **less** but capture barely half the facts **and assert a
+fabricated acquisition**. `buy-by-quality` wastes $0.02 on the trap source, so it
+can't afford the analysis that holds the governance red flags. The agent previews
+past the trap, skips the rumor, and gets the complete, accurate picture. That gap
+is judgment a rule can't replicate.
 
-> **Tip:** Run `npm run generate-wallets` to auto-generate the `SELLER_ADDRESS`, `SELLER_PRIVATE_KEY`, `BUYER_ADDRESS`, and `BUYER_PRIVATE_KEY` values.
+## Architecture
 
-## Demo Credentials
+```
+  research agent  ──(Vercel AI SDK + AI Gateway)──►  LLM reasoning
+        │  tools: list_marketplace · preview · purchase · check_budget · submit_brief
+        ▼
+  marketplace (x402-protected Next.js routes)
+        │  GET 402 → sign EIP-3009 authorization → retry with payment
+        ▼
+  Circle Gateway  ──batches signed authorizations──►  single on-chain settlement on Arc
+        │
+        ▼
+  Supabase (payment ledger)        lib/score.ts (objective brief scorer)
+```
 
-The app uses a hardcoded demo account for local development:
+- **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop. Model is routed through
+  the **Vercel AI Gateway** — develop on `claude-haiku-4.5`, swap one string to
+  `claude-opus-4.8` for the demo.
+- **Marketplace** (`lib/marketplace.ts`): the decision space — 9 sources with
+  varied price/quality/reliability, free previews, the trap, and a misleading
+  rumor. Reliability is deterministic under a seed, so runs are reproducible.
+- **Settlement** (`lib/x402.ts`): x402 + Circle Gateway batching on Arc. Each
+  `purchase` is a real `gateway.pay()` that settles on-chain.
+- **Scorer** (`lib/score.ts`): grades a brief by weighted ground-truth facts
+  captured, and flags whether it ingested the false rumor.
+- **Baselines** (`lib/baseline.ts`): non-LLM buy-cheapest / buy-by-quality buyers
+  for the comparison.
 
-| Email | Password |
-| --- | --- |
-| `admin@example.com` | `123456` |
+## Everything settles on Arc
 
-## Security & Usage Model
+- Network: **Arc testnet** (`eip155:5042002`), RPC `https://rpc.testnet.arc.network`
+- USDC: `0x3600000000000000000000000000000000000000`; Circle Gateway batching
+- Payments are gas-free for the agent (authorizations are batched into one
+  on-chain settlement); explorer: `https://testnet.arcscan.app`
 
-This sample application:
-- Assumes testnet usage only
-- Handles secrets via environment variables
-- Is not intended for production use without modification
+## Run it
+
+### Prerequisites
+- Node.js v22+
+- A cloud [Supabase](https://supabase.com) project (free) — the seller's payment ledger
+- A [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) API key — routes the agent's LLM calls
+
+### Setup
+```bash
+npm install
+cp .env.example .env.local
+npm run generate-wallets          # creates seller + buyer wallets in .env.local
+# Fund the buyer at https://faucet.circle.com (Arc Testnet)
+```
+Then add to `.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=...            # your Supabase project URL + keys
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+AI_GATEWAY_API_KEY=...                  # Vercel AI Gateway
+```
+Apply the two SQL migrations in `supabase/migrations/` to your project (SQL Editor or `supabase db push`).
+
+### Commands
+```bash
+npm run dev                 # start the seller (marketplace + x402 endpoints)
+npm run research-agent      # run the autonomous agent (brief + spend ledger + score)
+npm run compare             # the money-shot: agent vs. baselines, side-by-side
+```
+Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
+
+## Tech & Circle products used
+
+Next.js 16 · Vercel AI SDK v6 + AI Gateway · `@circle-fin/x402-batching`
+(**Circle Gateway** batching + **Circle Nanopayments** on **Arc**) · x402 ·
+Supabase · viem.
+
+## Credits & license
+
+This project **builds on Circle's reference implementation**
+[`circlefin/arc-nanopayments`](https://github.com/circlefin/arc-nanopayments)
+(Apache 2.0) for the x402 + Circle Gateway settlement layer on Arc — we fixed a
+validity-window bug in it (the facilitator now requires a 7-day minimum that the
+reference hardcoded shorter; see `lib/x402.ts`).
+
+**Our contribution** is everything that makes it an *autonomous paying agent*: the
+research-agent reasoning loop (`lib/agent.ts`), the marketplace decision space
+(`lib/marketplace.ts`), the objective scorer (`lib/score.ts`), and the baseline
+comparison (`lib/baseline.ts`, `compare.mts`).
+
+Licensed under Apache 2.0 (see `LICENSE`).
