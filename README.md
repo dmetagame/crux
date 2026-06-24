@@ -86,6 +86,19 @@ is judgment a rule can't replicate.
 - Payments are gas-free for the agent (authorizations are batched into one
   on-chain settlement); explorer: `https://testnet.arcscan.app`
 
+## Beyond Arc: genuine external counterparties
+
+The agent's payment capability isn't limited to our own marketplace. `npm run
+external-demo` discovers **real third-party x402 services** via Coinbase's x402
+Bazaar and pays one on Base Sepolia — proof of a genuine external counterparty,
+not self-dealing (the one thing a pure-Arc, self-authored entry can't show).
+
+Verified live: paid **Node4All Fortune** ($0.002 USDC, x402 v2 exact scheme),
+settled on-chain on Base Sepolia
+([example tx](https://sepolia.basescan.org/tx/0xb6551b36f33e55a8491edb8ec0d56166d99086b4bfe4fca7fe70a6bb09c1c429)).
+Uses the `@x402/core` v2 client (`x402HTTPClient` + `ExactEvmScheme`) — a
+different rail (Coinbase facilitator) from the Circle Gateway batching on Arc.
+
 ## Run it
 
 ### Prerequisites
@@ -114,6 +127,7 @@ Apply the two SQL migrations in `supabase/migrations/` to your project (SQL Edit
 npm run dev                 # start the seller (marketplace + x402 endpoints)
 npm run research-agent      # run the autonomous agent (brief + spend ledger + score)
 npm run compare             # the money-shot: agent vs. baselines, side-by-side
+npm run external-demo       # pay a REAL external x402 service on Base (via the Bazaar)
 ```
 Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
 
