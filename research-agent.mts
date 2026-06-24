@@ -65,6 +65,7 @@ const tools = {
     execute: async ({ sourceId }) => {
       const meta = catalog().find((c) => c.id === sourceId);
       if (!meta) return { error: `Unknown source: ${sourceId}` };
+      console.log(`  ? previewed ${sourceId} (free)`);
       return { id: sourceId, name: meta.name, hasPreview: meta.hasPreview, preview: getPreview(sourceId).preview };
     },
   }),
@@ -132,7 +133,9 @@ const system =
   `some are previewable for free, some are unreliable (may take your payment and return nothing useful), ` +
   `and at least one is cheap but misleading. Two cheap sources overlap heavily.\n\n` +
   `Spend wisely:\n` +
-  `- Use list_marketplace and the free preview to judge value BEFORE paying.\n` +
+  `- Use list_marketplace to see what's on offer. The listing does NOT include previews.\n` +
+  `- Sources can look similar on paper. When a source's actual relevance to THIS company is ` +
+  `unclear from its listing, use the free preview to inspect a sample BEFORE paying.\n` +
   `- Match what you buy to what matters most; don't overpay for trivia or buy redundant sources.\n` +
   `- Every purchase costs real USDC and is irreversible. Give a one-line rationale for each.\n` +
   `- If an unreliable source returns nothing useful, adapt — don't blindly re-buy it.\n` +

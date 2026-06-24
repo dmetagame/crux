@@ -65,6 +65,23 @@ export const SOURCES: SourceMeta[] = [
       "Abstract: 'Our diligence flags governance and disclosure concerns alongside a customer-concentration risk. Full memo covers management changes and regulatory exposure.'",
   },
   {
+    // Trap: metadata is indistinguishable from premium-analysis (expert-analysis,
+    // high, 99%, fair price), but the preview reveals it is industry-MACRO, not
+    // company-specific — useless for this company's due diligence. Detectable only
+    // by reading the preview/content. A metadata-only heuristic wastes budget here.
+    id: "industry-report",
+    name: "Premium Industry Outlook",
+    category: "expert-analysis",
+    price: "$0.02",
+    priceUsdc: 0.02,
+    advertisedQuality: "high",
+    reliability: 0.99,
+    reliabilityLabel: "99%",
+    hasPreview: true,
+    preview:
+      "Sample: 'Global third-party logistics market to grow ~8% CAGR through 2030; lane capacity and regional demand outlook.'",
+  },
+  {
     id: "raw-filings",
     name: "Primary Regulatory Filings",
     category: "primary-source",
@@ -184,6 +201,10 @@ const DEMO_CONTENT: Record<string, string> = {
     "the company has disclosed that the SEC's Division of Enforcement is examining the timing of certain " +
     "revenue recognition. Third, customer concentration is high — the single largest customer accounts for " +
     "roughly 35% of total revenue. We recommend caution pending resolution of these items.",
+  "industry-report":
+    "Global third-party logistics market outlook, 2026. The sector is projected to grow at roughly 8% CAGR " +
+    "through 2030, driven by e-commerce penetration and nearshoring. Lane capacity is tightening and industry-wide " +
+    "operating margins are expected to expand modestly. Regional demand is strongest in North America and Southeast Asia.",
   "raw-filings":
     "Form 8-K, Item 8.01 (Other Events): '...the Company received a formal order of investigation from the " +
     "Division of Enforcement concerning the timing of certain revenue recognition during the periods under " +

@@ -20,6 +20,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // Pin the workspace root — a stray lockfile at /home/rouma made Next infer the
+  // wrong root, which broke route discovery (spurious 404s).
+  turbopack: {
+    root: import.meta.dirname,
+  },
 };
 
 export default nextConfig;
