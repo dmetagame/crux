@@ -115,13 +115,23 @@ export default function AgentPage() {
 
   async function runCompare() {
     reset("compare");
+    const enc = encodeURIComponent(topic);
+    // Three separate requests so each is its own function invocation (fits the
+    // 60s Hobby cap); the comparison table assembles as each completes.
+    const steps = [
+      { label: "reasoning-agent", url: `/api/agent/run?topic=${enc}&budget=${BUDGET}` },
+      { label: "buy-cheapest", url: `/api/agent/baseline?strategy=cheapest&topic=${enc}&budget=${BUDGET}` },
+      { label: "buy-by-quality", url: `/api/agent/baseline?strategy=quality&topic=${enc}&budget=${BUDGET}` },
+    ];
     try {
-      await streamNDJSON(`/api/agent/compare?topic=${encodeURIComponent(topic)}&budget=${BUDGET}`, (o) => {
-        if (o.type === "strategy_start") setActive(o.label);
-        else if (o.type === "event") setEvents((e) => [...e, { label: o.label, ev: o.event }]);
-        else if (o.type === "strategy_done") setCompare((c) => ({ ...c, [o.label]: { result: o.result, score: o.score } }));
-        else if (o.type === "error") setErr(o.message);
-      });
+      for (const s of steps) {
+        setActive(s.label);
+        await streamNDJSON(s.url, (o) => {
+          if (o.type === "event") setEvents((e) => [...e, { label: s.label, ev: o.event }]);
+          else if (o.type === "done") setCompare((c) => ({ ...c, [s.label]: { result: o.result, score: o.score } }));
+          else if (o.type === "error") setErr(o.message);
+        });
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {

@@ -1,21 +1,18 @@
-import { runResearchAgent } from "@/lib/agent";
+import { runBaseline, type Strategy } from "@/lib/baseline";
 import { scoreBrief } from "@/lib/score";
 
 export const maxDuration = 60;
 
 /**
- * Streams a single autonomous research run as NDJSON (one JSON object per line):
- *   {type:"event", event:{kind:"preview"|"purchase", ...}}   — live as it happens
- *   {type:"done", result, score}                              — final brief + score
- *   {type:"error", message}
- *
- * The agent pays REAL USDC (Arc testnet) for each purchase; purchases settle and
- * carry an on-chain tx the UI links to the explorer.
+ * Streams a single non-LLM baseline run (NDJSON), so the comparison can be
+ * assembled client-side from one request per strategy — each its own function
+ * invocation under the 60s Hobby cap.
+ *   {type:"event", event} · {type:"done", result, score} · {type:"error", message}
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const topic = url.searchParams.get("topic") ?? "Northwind Logistics";
-  const model = url.searchParams.get("model") ?? "anthropic/claude-haiku-4.5";
+  const strategy = (url.searchParams.get("strategy") ?? "cheapest") as Strategy;
   const budget = parseFloat(url.searchParams.get("budget") ?? "0.05");
   const seed = url.searchParams.get("seed") ?? "demo";
   const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
@@ -27,8 +24,8 @@ export async function GET(req: Request) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       try {
         if (!buyerKey) throw new Error("Server missing BUYER_PRIVATE_KEY");
-        const result = await runResearchAgent({
-          model,
+        const result = await runBaseline({
+          strategy,
           topic,
           budget,
           baseUrl,
