@@ -42,7 +42,7 @@ for (const e of r.ledger) {
 console.log(`\nTotal spent: $${r.spent} / $${BUDGET} budget   (purchases: ${r.ledger.length}, previews: ${r.previews})`);
 console.log(`LLM steps: ${r.steps}   tokens: ${r.tokens}`);
 
-const score = scoreBrief(r.brief, r.factsClaimed);
+const score = scoreBrief(r.brief, r.factsClaimed, TOPIC);
 console.log("\n" + "=".repeat(70));
 console.log("SCORE vs ground truth");
 console.log(`  Facts captured: ${score.capturedFacts.map((f) => f.id).join(", ") || "none"} (${score.capturedFacts.length}/5)`);

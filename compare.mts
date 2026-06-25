@@ -55,7 +55,7 @@ console.log("-".repeat(72));
 
 for (let i = 0; i < results.length; i++) {
   const r = results[i];
-  const s = scoreBrief(r.brief, r.factsClaimed);
+  const s = scoreBrief(r.brief, r.factsClaimed, TOPIC);
   console.log(
     row([
       displayLabel(r, i),
@@ -70,7 +70,7 @@ for (let i = 0; i < results.length; i++) {
 
 console.log("\n" + "=".repeat(78));
 const agent = results[0];
-const agentScore = scoreBrief(agent.brief, agent.factsClaimed);
+const agentScore = scoreBrief(agent.brief, agent.factsClaimed, TOPIC);
 console.log(
   `Verdict: the reasoning agent captured ${agentScore.weighted}/${agentScore.maxWeighted} ` +
     `(${Math.round(agentScore.coverage * 100)}%) for $${agent.spent} with no false claim — ` +
