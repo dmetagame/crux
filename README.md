@@ -1,8 +1,8 @@
-# Lepton — Autonomous Paying Research Agent
+# Crux — Autonomous Paying Research Agent
 
-> An AI agent that researches a company under a strict USDC budget, paying for
-> information with real nanopayments that settle on **Arc**. The spending
-> **judgment** is the product — not the report.
+> Crux decides what information is worth buying about a company, under a strict
+> USDC budget, paying for each source with real nanopayments that settle on
+> **Arc**. The spending **judgment** is the product — not the report.
 
 Entry for **RFB-01 (Autonomous Paying Agents)** of the Lepton Agents Hackathon
 (Canteen × Circle on Arc). Every purchase below is a real x402 nanopayment that

@@ -28,8 +28,9 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Arc Nanopayments Demo",
-  description: "Arc nanopayments demo application",
+  title: "Crux — Autonomous Paying Research Agent",
+  description:
+    "Crux is an AI agent that decides what information is worth buying about a company, under a strict USDC budget, paying for each source with real nanopayments that settle on Arc.",
 };
 
 const geistSans = Geist({
