@@ -5,7 +5,7 @@
  * Run:  BASE_URL=http://localhost:3001 npm run compare
  * Env:  AI_GATEWAY_API_KEY, BUYER_PRIVATE_KEY (.env.local); optional MODEL/TOPIC/BUDGET/SEED.
  */
-import { runResearchAgent, type RunResult } from "./lib/agent.ts";
+import { runResearchAgent, type RunResult, type AgentEvent } from "./lib/agent.ts";
 import { runBaseline } from "./lib/baseline.ts";
 import { scoreBrief } from "./lib/score.ts";
 
@@ -22,16 +22,23 @@ const common = { topic: TOPIC, budget: BUDGET, baseUrl: BASE, seed: SEED, buyerK
 console.log(`\nComparison — Topic: ${TOPIC} | Budget: $${BUDGET} | Seed: ${SEED}`);
 console.log(`Reasoning model: ${MODEL}   (baselines use no LLM)\n`);
 
+const fmt = (e: AgentEvent) =>
+  console.log(
+    e.kind === "preview"
+      ? `  ? previewed ${e.sourceId}`
+      : `  $ paid ${e.price} for ${e.sourceId} ${e.delivered ? "" : "(DEGRADED) "}— ${e.rationale}`,
+  );
+
 const results: RunResult[] = [];
 
 console.log(`-- reasoning agent --`);
-results.push(await runResearchAgent({ model: MODEL, ...common, onEvent: (m) => console.log(m) }));
+results.push(await runResearchAgent({ model: MODEL, ...common, onEvent: fmt }));
 
 console.log(`\n-- buy-cheapest baseline --`);
-results.push(await runBaseline({ strategy: "cheapest", ...common, onEvent: (m) => console.log(m) }));
+results.push(await runBaseline({ strategy: "cheapest", ...common, onEvent: fmt }));
 
 console.log(`\n-- buy-by-quality baseline --`);
-results.push(await runBaseline({ strategy: "quality", ...common, onEvent: (m) => console.log(m) }));
+results.push(await runBaseline({ strategy: "quality", ...common, onEvent: fmt }));
 
 // --- Comparison table ---
 const W = { label: 16, spent: 9, buys: 5, facts: 6, coverage: 13, flag: 13 };

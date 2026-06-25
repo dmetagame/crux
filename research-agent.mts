@@ -25,7 +25,12 @@ const r = await runResearchAgent({
   baseUrl: BASE,
   seed: SEED,
   buyerKey,
-  onEvent: (m) => console.log(m),
+  onEvent: (e) =>
+    console.log(
+      e.kind === "preview"
+        ? `  ? previewed ${e.sourceId} (free)`
+        : `  $ paid ${e.price} for ${e.sourceId} ${e.delivered ? "(delivered)" : "(DEGRADED)"} — ${e.rationale}`,
+    ),
 });
 
 console.log("\n" + "=".repeat(70));

@@ -17,7 +17,21 @@ export interface LedgerEntry {
   price: string;
   delivered: boolean;
   rationale: string;
+  /** On-chain settlement tx/batch id from gateway.pay (Arc testnet). */
+  tx?: string;
 }
+
+/** Structured live events, for both the CLI and the streaming web UI. */
+export type AgentEvent =
+  | { kind: "preview"; sourceId: string }
+  | {
+      kind: "purchase";
+      sourceId: string;
+      price: string;
+      delivered: boolean;
+      rationale: string;
+      tx?: string;
+    };
 
 export interface RunResult {
   label: string;
@@ -38,7 +52,7 @@ export interface RunOpts {
   baseUrl: string;
   seed: string;
   buyerKey: `0x${string}`;
-  onEvent?: (msg: string) => void;
+  onEvent?: (e: AgentEvent) => void;
 }
 
 const round = (n: number) => Math.round(n * 1e6) / 1e6;
@@ -56,7 +70,7 @@ export async function ensureGatewayFunded(
 
 export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
   const { model, topic, budget, baseUrl, seed, buyerKey, onEvent } = opts;
-  const log = onEvent ?? (() => {});
+  const emit = onEvent ?? (() => {});
 
   const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: buyerKey });
   await ensureGatewayFunded(gateway, budget);
@@ -83,7 +97,7 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
         const meta = catalog().find((c) => c.id === sourceId);
         if (!meta) return { error: `Unknown source: ${sourceId}` };
         previews++;
-        log(`  ? previewed ${sourceId} (free)`);
+        emit({ kind: "preview", sourceId });
         return { id: sourceId, name: meta.name, hasPreview: meta.hasPreview, preview: getPreview(sourceId).preview };
       },
     }),
@@ -110,9 +124,10 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
         const url = `${baseUrl}${meta.purchaseUrl}?topic=${encodeURIComponent(topic)}&seed=${encodeURIComponent(seed)}`;
         const res = await gateway.pay(url, { method: "GET" });
         const data = res.data as { delivered: boolean; content: string };
+        const tx = (res as { transaction?: string }).transaction || undefined;
         spent += meta.priceUsdc;
-        ledger.push({ n: ledger.length + 1, sourceId, price: meta.price, delivered: data.delivered, rationale });
-        log(`  $ paid ${meta.price} for ${sourceId} ${data.delivered ? "(delivered)" : "(DEGRADED)"} — ${rationale}`);
+        ledger.push({ n: ledger.length + 1, sourceId, price: meta.price, delivered: data.delivered, rationale, tx });
+        emit({ kind: "purchase", sourceId, price: meta.price, delivered: data.delivered, rationale, tx });
         return { delivered: data.delivered, content: data.content, spentSoFar: round(spent), remaining: round(budget - spent) };
       },
     }),
@@ -141,6 +156,9 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
     `- Sources can look similar on paper. When a source's actual relevance to THIS company is ` +
     `unclear from its listing, use the free preview to inspect a sample BEFORE paying.\n` +
     `- Match what you buy to what matters most; don't overpay for trivia or buy redundant sources.\n` +
+    `- Macro or industry/sector-level material (market-size, growth forecasts, sector outlooks) rarely ` +
+    `changes a COMPANY-specific due-diligence conclusion — prioritise company-specific evidence and don't ` +
+    `spend budget on macro context.\n` +
     `- Every purchase costs real USDC and is irreversible. Give a one-line rationale for each.\n` +
     `- If an unreliable source returns nothing useful, adapt — don't blindly re-buy it.\n` +
     `- Stop buying once you can write a credible brief; leftover budget is a good outcome.\n` +

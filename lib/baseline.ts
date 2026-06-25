@@ -13,7 +13,7 @@
  */
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { catalog } from "./marketplace.ts";
-import { ensureGatewayFunded, type RunResult, type LedgerEntry } from "./agent.ts";
+import { ensureGatewayFunded, type RunResult, type LedgerEntry, type AgentEvent } from "./agent.ts";
 
 export type Strategy = "cheapest" | "quality";
 
@@ -26,12 +26,12 @@ export interface BaselineOpts {
   baseUrl: string;
   seed: string;
   buyerKey: `0x${string}`;
-  onEvent?: (msg: string) => void;
+  onEvent?: (e: AgentEvent) => void;
 }
 
 export async function runBaseline(opts: BaselineOpts): Promise<RunResult> {
   const { strategy, topic, budget, baseUrl, seed, buyerKey, onEvent } = opts;
-  const log = onEvent ?? (() => {});
+  const emit = onEvent ?? (() => {});
 
   const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: buyerKey });
   await ensureGatewayFunded(gateway, budget);
@@ -51,15 +51,11 @@ export async function runBaseline(opts: BaselineOpts): Promise<RunResult> {
     const url = `${baseUrl}${s.purchaseUrl}?topic=${encodeURIComponent(topic)}&seed=${encodeURIComponent(seed)}`;
     const res = await gateway.pay(url, { method: "GET" });
     const data = res.data as { delivered: boolean; content: string };
+    const tx = (res as { transaction?: string }).transaction || undefined;
     spent += s.priceUsdc;
-    ledger.push({
-      n: ledger.length + 1,
-      sourceId: s.id,
-      price: s.price,
-      delivered: data.delivered,
-      rationale: strategy === "cheapest" ? "cheapest available" : "advertised high quality",
-    });
-    log(`  $ paid ${s.price} for ${s.id} ${data.delivered ? "" : "(DEGRADED) "}[${strategy}]`);
+    const rationale = strategy === "cheapest" ? "cheapest available" : "advertised high quality";
+    ledger.push({ n: ledger.length + 1, sourceId: s.id, price: s.price, delivered: data.delivered, rationale, tx });
+    emit({ kind: "purchase", sourceId: s.id, price: s.price, delivered: data.delivered, rationale, tx });
     if (data.delivered) briefParts.push(data.content);
   }
 
