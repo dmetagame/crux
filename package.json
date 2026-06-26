@@ -9,7 +9,8 @@
     "agent": "node --experimental-transform-types --no-warnings --env-file=.env.local agent.mts",
     "research-agent": "node --experimental-transform-types --no-warnings --env-file=.env.local research-agent.mts",
     "compare": "node --experimental-transform-types --no-warnings --env-file=.env.local compare.mts",
-    "external-demo": "node --experimental-transform-types --no-warnings --env-file=.env.local external-x402.mts"
+    "external-demo": "node --experimental-transform-types --no-warnings --env-file=.env.local external-x402.mts",
+    "refresh-tickers": "node --experimental-transform-types --no-warnings scripts/refresh-tickers.mts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^2.0.4",
