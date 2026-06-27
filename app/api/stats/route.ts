@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   ARC_TESTNET_CHAIN_ID,
   classifySettlementReference,
 } from "@/lib/settlement";
+import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 15;
 
@@ -14,8 +15,20 @@ export const maxDuration = 15;
  * This is the RFB-01 traction metric, with Arc tx confirmation shown when
  * Circle Gateway exposes a normal EVM transaction hash.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const rate = await consumeRateLimit({
+      key: limitKey("public:stats", clientIp(req)),
+      limit: 60,
+      windowSeconds: 60,
+    });
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Stats rate limit reached." },
+        { status: 429, headers: rateLimitHeaders(rate) },
+      );
+    }
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,

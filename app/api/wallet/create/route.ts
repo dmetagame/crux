@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUserWallet } from "@/lib/wallet";
+import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 15;
 
@@ -12,6 +13,18 @@ export const maxDuration = 15;
  */
 export async function POST(req: NextRequest) {
   try {
+    const rate = await consumeRateLimit({
+      key: limitKey("wallet:create", clientIp(req)),
+      limit: 3,
+      windowSeconds: 3600,
+    });
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Wallet creation limit reached. Try again later." },
+        { status: 429, headers: rateLimitHeaders(rate) },
+      );
+    }
+
     let email: string | null = null;
     try {
       const body = await req.json();

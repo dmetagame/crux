@@ -82,6 +82,7 @@ interface RecentPayment {
 interface WalletInfo {
   walletId: string;
   address: string;
+  walletToken: string;
 }
 interface WalletStatus {
   funded: boolean;
@@ -98,8 +99,13 @@ const REAL_BUDGET = 0.03;
 const PUBLIC_EXAMPLES = ["Nvidia", "Coinbase", "Palantir"];
 const PRIVATE_EXAMPLES = ["OpenAI", "Anthropic", "Stripe"];
 
-async function streamNDJSON(url: string, onObj: (o: any) => void, signal?: AbortSignal) {
-  const res = await fetch(url, { signal });
+async function streamNDJSON(
+  url: string,
+  onObj: (o: any) => void,
+  signal?: AbortSignal,
+  init: RequestInit = {},
+) {
+  const res = await fetch(url, { ...init, signal });
   if (!res.body) throw new Error("No response body");
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -171,7 +177,23 @@ export default function AgentPage() {
   const [walletErr, setWalletErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // Use the visitor's own wallet only once it's funded; otherwise the house wallet.
-  const useOwnWallet = !!(wallet && walletStatus?.funded);
+  const useOwnWallet = !!(wallet?.walletToken && walletStatus?.funded);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("crux.wallet");
+      const saved = raw ? JSON.parse(raw) : null;
+      if (
+        typeof saved?.walletId === "string" &&
+        typeof saved?.address === "string" &&
+        typeof saved?.walletToken === "string"
+      ) {
+        setWallet(saved);
+      }
+    } catch {
+      localStorage.removeItem("crux.wallet");
+    }
+  }, []);
 
   async function createWallet() {
     if (walletBusy) return;
@@ -186,7 +208,13 @@ export default function AgentPage() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not create wallet");
-      setWallet({ walletId: d.walletId, address: d.address });
+      const nextWallet = {
+        walletId: d.walletId,
+        address: d.address,
+        walletToken: d.walletToken,
+      };
+      setWallet(nextWallet);
+      localStorage.setItem("crux.wallet", JSON.stringify(nextWallet));
     } catch (e) {
       setWalletErr((e as Error).message);
     } finally {
@@ -199,7 +227,9 @@ export default function AgentPage() {
     setWalletBusy("check");
     setWalletErr(null);
     try {
-      const r = await fetch(`/api/wallet/status?walletId=${wallet.walletId}`);
+      const r = await fetch(`/api/wallet/status?walletId=${wallet.walletId}`, {
+        headers: { "X-Crux-Wallet-Token": wallet.walletToken },
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not check funding");
       setWalletStatus({ funded: d.funded, walletUsdc: d.walletUsdc, gatewayUsdc: d.gatewayUsdc });
@@ -250,12 +280,20 @@ export default function AgentPage() {
     resetRun();
     setRealResult(null);
     const walletParam = useOwnWallet ? `&walletId=${wallet!.walletId}` : "";
+    const init = useOwnWallet
+      ? { headers: { "X-Crux-Wallet-Token": wallet!.walletToken } }
+      : undefined;
     try {
-      await streamNDJSON(`/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}`, (o) => {
-        if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
-        else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
-        else if (o.type === "error") setErr(o.message);
-      });
+      await streamNDJSON(
+        `/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}`,
+        (o) => {
+          if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
+          else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
+          else if (o.type === "error") setErr(o.message);
+        },
+        undefined,
+        init,
+      );
     } catch (e) {
       setErr((e as Error).message);
     } finally {

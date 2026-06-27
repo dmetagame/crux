@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { getWalletKey } from "@/lib/wallet";
+import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 20;
 
@@ -17,10 +18,28 @@ export async function GET(req: NextRequest) {
   if (!walletId) {
     return NextResponse.json({ error: "Missing walletId" }, { status: 400 });
   }
+  const walletToken = req.headers.get("x-crux-wallet-token")?.trim() ?? null;
+
+  const rate = await consumeRateLimit({
+    key: limitKey("wallet:status", `${walletId}:${clientIp(req)}`),
+    limit: 30,
+    windowSeconds: 60,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Wallet status limit reached. Try again shortly." },
+      { status: 429, headers: rateLimitHeaders(rate) },
+    );
+  }
 
   try {
-    const rec = await getWalletKey(walletId);
-    if (!rec) return NextResponse.json({ error: "Unknown wallet" }, { status: 404 });
+    const rec = await getWalletKey(walletId, walletToken);
+    if (!rec) {
+      return NextResponse.json(
+        { error: "Unknown or unauthorized wallet" },
+        { status: 404 },
+      );
+    }
 
     const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: rec.key });
     const bal = await gateway.getBalances();

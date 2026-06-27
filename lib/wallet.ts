@@ -13,6 +13,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { randomToken, safeEqualHex, sha256Hex } from "@/lib/access-crypto";
 
 function admin() {
   return createClient(
@@ -24,9 +25,12 @@ function admin() {
 export interface NewWallet {
   walletId: string;
   address: `0x${string}`;
+  walletToken: string;
 }
 
-async function findWalletByEmail(email: string): Promise<NewWallet | null> {
+async function findWalletByEmail(
+  email: string,
+): Promise<{ walletId: string; address: `0x${string}` } | null> {
   const { data, error } = await admin()
     .from("user_wallets")
     .select("id, address")
@@ -50,41 +54,77 @@ export async function createUserWallet(email: string | null): Promise<NewWallet>
   if (normalizedEmail) {
     const existing = await findWalletByEmail(normalizedEmail);
     if (existing) {
-      return existing;
+      return { ...existing, walletToken: await issueWalletToken(existing.walletId) };
     }
   }
 
   const privateKey = generatePrivateKey();
   const address = privateKeyToAccount(privateKey).address;
+  const walletToken = randomToken();
 
-  const { data, error } = await admin()
+  let { data, error } = await admin()
     .from("user_wallets")
-    .insert({ email: normalizedEmail, address, private_key: privateKey })
+    .insert({
+      email: normalizedEmail,
+      address,
+      private_key: privateKey,
+      wallet_token_hash: sha256Hex(walletToken),
+      wallet_token_created_at: new Date().toISOString(),
+    })
     .select("id, address")
     .single();
+
+  if (error && /wallet_token_hash|wallet_token_created_at/i.test(error.message)) {
+    const fallback = await admin()
+      .from("user_wallets")
+      .insert({ email: normalizedEmail, address, private_key: privateKey })
+      .select("id, address")
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error && normalizedEmail && /duplicate|unique/i.test(error.message)) {
     const existing = await findWalletByEmail(normalizedEmail);
     if (existing) {
-      return existing;
+      return { ...existing, walletToken: await issueWalletToken(existing.walletId) };
     }
   }
 
   if (error) throw new Error(`Could not create wallet: ${error.message}`);
-  return { walletId: data.id as string, address: data.address as `0x${string}` };
+  if (!data) throw new Error("Could not create wallet: empty database response");
+  return { walletId: data.id as string, address: data.address as `0x${string}`, walletToken };
 }
 
 /** Resolve a walletId to its private key (server-side only). Null if unknown. */
 export async function getWalletKey(
   walletId: string,
+  walletToken?: string | null,
 ): Promise<{ key: `0x${string}`; address: string } | null> {
-  const { data, error } = await admin()
+  const tokenQuery = await admin()
     .from("user_wallets")
-    .select("address, private_key")
+    .select("address, private_key, wallet_token_hash")
     .eq("id", walletId)
     .single();
+  let data: any | null = tokenQuery.data;
+  let error = tokenQuery.error;
+
+  if (error && /wallet_token_hash/i.test(error.message)) {
+    const fallback = await admin()
+      .from("user_wallets")
+      .select("address, private_key")
+      .eq("id", walletId)
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !data) return null;
+  const tokenHash = (data as { wallet_token_hash?: string | null }).wallet_token_hash;
+  if (tokenHash) {
+    const supplied = walletToken?.trim();
+    if (!supplied || !safeEqualHex(tokenHash, sha256Hex(supplied))) return null;
+  }
   return { key: data.private_key as `0x${string}`, address: data.address as string };
 }
 
@@ -94,4 +134,21 @@ export async function countUserWallets(): Promise<number> {
     .from("user_wallets")
     .select("*", { count: "exact", head: true });
   return count ?? 0;
+}
+
+async function issueWalletToken(walletId: string) {
+  const walletToken = randomToken();
+  const { error } = await admin()
+    .from("user_wallets")
+    .update({
+      wallet_token_hash: sha256Hex(walletToken),
+      wallet_token_created_at: new Date().toISOString(),
+    })
+    .eq("id", walletId);
+
+  if (error && !/wallet_token_hash|wallet_token_created_at/i.test(error.message)) {
+    throw new Error(`Could not issue wallet token: ${error.message}`);
+  }
+
+  return walletToken;
 }

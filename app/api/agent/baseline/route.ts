@@ -1,4 +1,6 @@
 import { runBaseline, type Strategy } from "@/lib/baseline";
+import { guardAgentRun } from "@/lib/agent-access";
+import { ndjsonError } from "@/lib/ndjson";
 import { scoreBrief } from "@/lib/score";
 
 export const maxDuration = 60;
@@ -17,6 +19,13 @@ export async function GET(req: Request) {
   const seed = url.searchParams.get("seed") ?? "demo";
   const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
   const baseUrl = url.origin;
+
+  const guard = await guardAgentRun(req, {
+    scope: "agent:baseline",
+    budgetUsdc: budget,
+    publicMaxBudgetUsdc: 0.05,
+  });
+  if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -38,6 +47,7 @@ export async function GET(req: Request) {
       } catch (err) {
         send({ type: "error", message: (err as Error).message });
       } finally {
+        await guard.release();
         controller.close();
       }
     },

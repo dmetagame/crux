@@ -19,6 +19,7 @@
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
 
 // Arc Testnet contract addresses (from @circle-fin/x402-batching SDK)
@@ -121,6 +122,8 @@ export function withGateway(
 
     // No payment — return 402 with Gateway batching payment requirements
     if (!paymentSignature) {
+      const rateLimit = await enforceX402RateLimit(req, "challenge");
+      if (rateLimit) return rateLimit;
       console.log(`[x402] 402 Payment Required: ${endpoint}`);
 
       const paymentRequired = {
@@ -146,6 +149,9 @@ export function withGateway(
 
     // Payment present — verify and settle via Circle Gateway
     try {
+      const rateLimit = await enforceX402RateLimit(req, "settle");
+      if (rateLimit) return rateLimit;
+
       const paymentPayload: PaymentPayload = JSON.parse(
         Buffer.from(paymentSignature, "base64").toString("utf-8"),
       );
@@ -260,5 +266,23 @@ export function withGateway(
 function isSettlementProofColumnError(message: string) {
   return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
     message,
+  );
+}
+
+async function enforceX402RateLimit(
+  req: NextRequest,
+  phase: "challenge" | "settle",
+) {
+  const rate = await consumeRateLimit({
+    key: limitKey(`x402:${phase}`, clientIp(req)),
+    limit: phase === "challenge" ? 120 : 180,
+    windowSeconds: 60,
+  });
+
+  if (rate.allowed) return null;
+
+  return NextResponse.json(
+    { error: "Too many x402 requests. Try again shortly." },
+    { status: 429, headers: rateLimitHeaders(rate) },
   );
 }

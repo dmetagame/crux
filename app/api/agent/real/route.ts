@@ -1,4 +1,6 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import { guardAgentRun } from "@/lib/agent-access";
+import { ndjsonError } from "@/lib/ndjson";
 import { saveRunReceipt } from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
 
@@ -21,7 +23,25 @@ export async function GET(req: Request) {
   // Optional: pay from a visitor's own funded wallet instead of the house wallet.
   // When absent, the default zero-friction house-wallet flow is unchanged.
   const walletId = url.searchParams.get("walletId")?.trim() || null;
+  const walletToken = req.headers.get("x-crux-wallet-token")?.trim() || null;
   const baseUrl = url.origin;
+
+  let visitorWallet: { key: `0x${string}`; address: string } | null = null;
+  if (walletId) {
+    visitorWallet = await getWalletKey(walletId, walletToken);
+    if (!visitorWallet) {
+      return ndjsonError("Unknown or unauthorized wallet.", 404);
+    }
+  }
+
+  const guard = await guardAgentRun(req, {
+    scope: "agent:real",
+    budgetUsdc: budget,
+    model,
+    visitorWalletId: walletId,
+    publicMaxBudgetUsdc: 0.03,
+  });
+  if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
@@ -31,9 +51,8 @@ export async function GET(req: Request) {
       try {
         let buyerKey: `0x${string}` | undefined;
         if (walletId) {
-          const rec = await getWalletKey(walletId);
-          if (!rec) throw new Error("Unknown wallet — create one first.");
-          buyerKey = rec.key;
+          buyerKey = visitorWallet?.key;
+          if (!buyerKey) throw new Error("Unknown or unauthorized wallet.");
         } else {
           buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
           if (!buyerKey) throw new Error("Server missing BUYER_PRIVATE_KEY");
@@ -80,6 +99,7 @@ export async function GET(req: Request) {
         }
         send({ type: "error", message });
       } finally {
+        await guard.release();
         controller.close();
       }
     },
