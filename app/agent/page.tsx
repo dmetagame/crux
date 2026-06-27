@@ -45,8 +45,9 @@ interface TopicMeta {
   name: string;
   blurb: string;
 }
-type Done = { result: RunResult; score: Score };
-type RealDone = { result: RealRunResult };
+type ReceiptMeta = { receiptId?: string | null; receiptUrl?: string | null };
+type Done = { result: RunResult; score: Score } & ReceiptMeta;
+type RealDone = { result: RealRunResult } & ReceiptMeta;
 
 interface Stats {
   totalPayments: number;
@@ -54,6 +55,14 @@ interface Stats {
   avgUsdc: number;
   distinctPayers: number;
   onboardedWallets?: number;
+  recent?: RecentPayment[];
+}
+
+interface RecentPayment {
+  amount: number;
+  endpoint: string;
+  tx?: string | null;
+  at: string;
 }
 
 interface WalletInfo {
@@ -209,7 +218,7 @@ export default function AgentPage() {
     try {
       await streamNDJSON(`/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}`, (o) => {
         if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
-        else if (o.type === "done") setRealResult({ result: o.result });
+        else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
         else if (o.type === "error") setErr(o.message);
       });
     } catch (e) {
@@ -229,7 +238,7 @@ export default function AgentPage() {
     try {
       await streamNDJSON(`/api/agent/run?topic=${encodeURIComponent(topic)}&budget=${BUDGET}`, (o) => {
         if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
-        else if (o.type === "done") setResult({ result: o.result, score: o.score });
+        else if (o.type === "done") setResult({ result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
         else if (o.type === "error") setErr(o.message);
       });
     } catch (e) {
@@ -257,7 +266,9 @@ export default function AgentPage() {
         setActive(s.label);
         await streamNDJSON(s.url, (o) => {
           if (o.type === "event") setEvents((e) => [...e, { label: s.label, ev: o.event }]);
-          else if (o.type === "done") setCompare((c) => ({ ...c, [s.label]: { result: o.result, score: o.score } }));
+          else if (o.type === "done") {
+            setCompare((c) => ({ ...c, [s.label]: { result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl } }));
+          }
           else if (o.type === "error") setErr(o.message);
         });
       }
@@ -293,12 +304,15 @@ export default function AgentPage() {
 
         {/* Live traction counter */}
         <StatsBar stats={stats} />
+        <RecentSettlementFeed stats={stats} />
         {!!stats?.onboardedWallets && (
           <p className="mt-1.5 text-[11px] text-zinc-500">
             + <span className="text-teal-300">{stats.onboardedWallets.toLocaleString()}</span> wallet
             {stats.onboardedWallets === 1 ? "" : "s"} self-funded by visitors paying from their own balance.
           </p>
         )}
+
+        <JudgeProofPanel />
 
         {/* Tabs */}
         <div className="mt-6 flex gap-1 border-b border-zinc-800">
@@ -590,6 +604,66 @@ function StatsBar({ stats }: { stats: Stats | null }) {
   );
 }
 
+function RecentSettlementFeed({ stats }: { stats: Stats | null }) {
+  const recent = stats?.recent?.filter((p) => p.tx).slice(0, 4) ?? [];
+  if (!recent.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+      <span className="uppercase tracking-wide text-zinc-600">Latest Arc settlements</span>
+      {recent.map((p, i) => (
+        <a
+          key={`${p.tx}-${i}`}
+          href={arcscanTx(p.tx!)}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded border border-zinc-800 bg-zinc-950/45 px-2 py-1 tabular-nums text-zinc-400 hover:border-teal-500/60 hover:text-teal-300"
+          title={`${p.endpoint} at ${new Date(p.at).toLocaleString()}`}
+        >
+          ${p.amount.toFixed(4)} · {p.tx!.slice(0, 8)}...
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function JudgeProofPanel() {
+  const proofs = [
+    {
+      pct: "30%",
+      name: "Agency",
+      text: "The model previews, buys, skips, and stops under budget; benchmark mode scores that judgment against baselines.",
+    },
+    {
+      pct: "30%",
+      name: "Traction",
+      text: "Every run emits settled test-USDC payments, plus optional visitor-funded wallets for distinct payer signal.",
+    },
+    {
+      pct: "20%",
+      name: "Circle/Arc",
+      text: "x402 seller routes, Circle Gateway batching, Arc testnet settlement, USDC-denominated budgets.",
+    },
+    {
+      pct: "20%",
+      name: "Innovation",
+      text: "The product is the spend decision itself: a measurable paid-information market for agents.",
+    },
+  ];
+  return (
+    <section className="mt-5 grid gap-2 md:grid-cols-4">
+      {proofs.map((p) => (
+        <div key={p.name} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-zinc-100">{p.name}</div>
+            <div className="rounded bg-teal-500/10 px-1.5 py-0.5 text-[11px] font-medium text-teal-300">{p.pct}</div>
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.text}</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function ChipRow({ label, hint, items, onPick, disabled }: { label: string; hint: string; items: string[]; onPick: (s: string) => void; disabled?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -655,10 +729,23 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
       ) : (
         <span className="text-amber-400">· paid, no usable data</span>
       )}
-      {ev.tx && <span className="ml-1 text-zinc-600">· batch {ev.tx.slice(0, 8)}</span>}
+      {ev.tx && (
+        <a
+          href={arcscanTx(ev.tx)}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-1 text-zinc-500 underline decoration-zinc-700 underline-offset-2 hover:text-teal-300 hover:decoration-teal-500"
+        >
+          · Arc tx {ev.tx.slice(0, 8)}
+        </a>
+      )}
       {ev.rationale && <div className="mt-0.5 text-zinc-400">“{ev.rationale}”</div>}
     </div>
   );
+}
+
+function arcscanTx(tx: string) {
+  return `https://testnet.arcscan.app/tx/${tx}`;
 }
 
 function ResultPanel({ done, heading = "Brief" }: { done?: Done; heading?: string }) {
@@ -667,7 +754,10 @@ function ResultPanel({ done, heading = "Brief" }: { done?: Done; heading?: strin
   return (
     <section className="mt-6 grid gap-4 md:grid-cols-3">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4 backdrop-blur-sm md:col-span-2">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">{heading}</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">{heading}</h3>
+          <ReceiptLink done={done} />
+        </div>
         <div className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{result.brief || "(no brief)"}</div>
       </div>
       <div className="space-y-3">
@@ -709,7 +799,10 @@ function RealResultPanel({ done }: { done: RealDone }) {
   return (
     <section className="mt-6 grid gap-4 md:grid-cols-3">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4 backdrop-blur-sm md:col-span-2">
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Brief — {result.subject}</h3>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Brief — {result.subject}</h3>
+          <ReceiptLink done={done} />
+        </div>
         <div className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{result.brief || "(no brief)"}</div>
         {result.citations?.length > 0 && (
           <div className="mt-3 border-t border-zinc-800 pt-3">
@@ -755,5 +848,19 @@ function RealResultPanel({ done }: { done: RealDone }) {
         </div>
       </div>
     </section>
+  );
+}
+
+function ReceiptLink({ done }: { done: ReceiptMeta }) {
+  if (!done.receiptUrl) return null;
+  return (
+    <a
+      href={done.receiptUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="rounded border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-xs font-medium text-teal-300 hover:border-teal-400/70"
+    >
+      Open receipt ↗
+    </a>
   );
 }

@@ -1,4 +1,5 @@
 import { runResearchAgent } from "@/lib/agent";
+import { saveRunReceipt } from "@/lib/run-receipts";
 import { scoreBrief } from "@/lib/score";
 
 export const maxDuration = 60;
@@ -25,6 +26,7 @@ export async function GET(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      const events: unknown[] = [];
       try {
         if (!buyerKey) throw new Error("Server missing BUYER_PRIVATE_KEY");
         const result = await runResearchAgent({
@@ -34,10 +36,33 @@ export async function GET(req: Request) {
           baseUrl,
           seed,
           buyerKey,
-          onEvent: (e) => send({ type: "event", event: e }),
+          onEvent: (e) => {
+            events.push(e);
+            send({ type: "event", event: e });
+          },
         });
         const score = scoreBrief(result.brief, result.factsClaimed, topic);
-        send({ type: "done", result, score });
+        let receiptId: string | null = null;
+        try {
+          receiptId = await saveRunReceipt({
+            mode: "benchmark",
+            subject: topic,
+            model,
+            budgetUsdc: budget,
+            spentUsdc: result.spent,
+            payerKind: "house-wallet",
+            payload: { result, score, events, seed, budget },
+          });
+        } catch (receiptErr) {
+          console.error("[receipt] save failed:", (receiptErr as Error).message);
+        }
+        send({
+          type: "done",
+          result,
+          score,
+          receiptId,
+          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
+        });
       } catch (err) {
         send({ type: "error", message: (err as Error).message });
       } finally {

@@ -51,6 +51,14 @@ can't afford the analysis that holds the governance red flags. The agent preview
 past the trap, skips the rumor, and gets the complete, accurate picture. That gap
 is judgment a rule can't replicate.
 
+## Shareable proof receipts
+
+Every completed web run can persist a public receipt at `/runs/<id>`: the budget,
+source previews, purchases, skips, rationales, final brief, benchmark score when
+available, and Arcscan links for every settlement. This is the async judging
+artifact: a reviewer does not have to trust the live UI or the README; they can
+open a single run and inspect what the agent decided and what actually settled.
+
 ## Architecture
 
 ```
@@ -120,7 +128,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 AI_GATEWAY_API_KEY=...                  # Vercel AI Gateway
 ```
-Apply the two SQL migrations in `supabase/migrations/` to your project (SQL Editor or `supabase db push`).
+Apply the SQL migrations in `supabase/migrations/` to your project (SQL Editor or `supabase db push`).
 
 ### Commands
 ```bash

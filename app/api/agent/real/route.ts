@@ -1,4 +1,5 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import { saveRunReceipt } from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
 
 export const maxDuration = 60;
@@ -26,6 +27,7 @@ export async function GET(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      const events: unknown[] = [];
       try {
         let buyerKey: `0x${string}` | undefined;
         if (walletId) {
@@ -42,9 +44,31 @@ export async function GET(req: Request) {
           budget,
           baseUrl,
           buyerKey,
-          onEvent: (e) => send({ type: "event", event: e }),
+          onEvent: (e) => {
+            events.push(e);
+            send({ type: "event", event: e });
+          },
         });
-        send({ type: "done", result });
+        let receiptId: string | null = null;
+        try {
+          receiptId = await saveRunReceipt({
+            mode: "real",
+            subject,
+            model,
+            budgetUsdc: budget,
+            spentUsdc: result.spent,
+            payerKind: walletId ? "visitor-wallet" : "house-wallet",
+            payload: { result, events, budget, walletId: walletId ? "visitor-wallet" : null },
+          });
+        } catch (receiptErr) {
+          console.error("[receipt] save failed:", (receiptErr as Error).message);
+        }
+        send({
+          type: "done",
+          result,
+          receiptId,
+          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
+        });
       } catch (err) {
         let message = (err as Error).message;
         // The first run from a user wallet deposits into the Gateway, which fails

@@ -23,6 +23,9 @@ Arc in sub-500ms. **The spending judgment is the product.**
    refuses the rumor the baselines swallow. This is our objective proof that the agent decides *well*.
 
 Every run on either surface fires real test-USDC settlements on Arc, counted live on the page.
+Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
+purchase rationales, final brief, benchmark score when available, and Arcscan settlement links.
+This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
 ## How it maps to the judging criteria
 - **Agentic sophistication (30%)** — the agent makes genuine cost/value tradeoffs (preview vs buy,
@@ -34,6 +37,7 @@ Every run on either surface fires real test-USDC settlements on Arc, counted liv
   distinct-payer signal, an optional lane lets a visitor generate their own Arc testnet wallet, fund it at
   the official Circle faucet, and pay for research from it — so they appear as a real distinct payer
   (`payment_events.payer` is the buyer address), counted separately as "wallets self-funded by visitors."
+  The run receipt pages turn those sessions into shareable proof artifacts.
 - **Circle tool usage (20%)** — Circle Gateway batching + x402 (HTTP 402) on Arc; the app is both buyer
   (the agent) and seller (x402-gated source endpoints). Plus an external-counterparty leg paying a
   third-party x402 resource via the Coinbase x402 Bazaar (`npm run external-demo`).
