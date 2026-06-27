@@ -28,9 +28,12 @@ Every run on either surface fires real test-USDC settlements on Arc, counted liv
 - **Agentic sophistication (30%)** — the agent makes genuine cost/value tradeoffs (preview vs buy,
   public-vs-private EDGAR call, redundancy avoidance, rumor skepticism), not scripted automation. The
   Benchmark tab proves this objectively against a ground-truth key and naive baselines.
-- **Traction (30%)** — zero-friction: no signup, pick a subject, watch real payments flow. The live
-  counter (autonomous payments / test-USDC settled / avg tx size / distinct payers) reads straight from
-  on-chain settlements. Average transaction size is sub-cent, matching the RFB metric.
+- **Traction (30%)** — zero-friction by default: no signup, pick a subject, watch real payments flow. The
+  live counter (autonomous payments / test-USDC settled / avg tx size / distinct payers) reads straight
+  from on-chain settlements; average transaction size is sub-cent, matching the RFB metric. For *genuine*
+  distinct-payer signal, an optional lane lets a visitor generate their own Arc testnet wallet, fund it at
+  the official Circle faucet, and pay for research from it — so they appear as a real distinct payer
+  (`payment_events.payer` is the buyer address), counted separately as "wallets self-funded by visitors."
 - **Circle tool usage (20%)** — Circle Gateway batching + x402 (HTTP 402) on Arc; the app is both buyer
   (the agent) and seller (x402-gated source endpoints). Plus an external-counterparty leg paying a
   third-party x402 resource via the Coinbase x402 Bazaar (`npm run external-demo`).

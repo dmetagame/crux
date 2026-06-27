@@ -53,6 +53,17 @@ interface Stats {
   totalUsdc: number;
   avgUsdc: number;
   distinctPayers: number;
+  onboardedWallets?: number;
+}
+
+interface WalletInfo {
+  walletId: string;
+  address: string;
+}
+interface WalletStatus {
+  funded: boolean;
+  walletUsdc: number;
+  gatewayUsdc: number;
 }
 
 const BUDGET = 0.05;
@@ -107,6 +118,62 @@ export default function AgentPage() {
   const [subject, setSubject] = useState<string>("Coinbase");
   const [realResult, setRealResult] = useState<RealDone | null>(null);
 
+  // optional "pay from your own wallet" lane
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
+  const [walletBusy, setWalletBusy] = useState<"create" | "check" | null>(null);
+  const [walletErr, setWalletErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  // Use the visitor's own wallet only once it's funded; otherwise the house wallet.
+  const useOwnWallet = !!(wallet && walletStatus?.funded);
+
+  async function createWallet() {
+    if (walletBusy) return;
+    setWalletBusy("create");
+    setWalletErr(null);
+    setWalletStatus(null);
+    try {
+      const r = await fetch("/api/wallet/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() || undefined }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not create wallet");
+      setWallet({ walletId: d.walletId, address: d.address });
+    } catch (e) {
+      setWalletErr((e as Error).message);
+    } finally {
+      setWalletBusy(null);
+    }
+  }
+
+  async function checkFunding() {
+    if (!wallet || walletBusy) return;
+    setWalletBusy("check");
+    setWalletErr(null);
+    try {
+      const r = await fetch(`/api/wallet/status?walletId=${wallet.walletId}`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not check funding");
+      setWalletStatus({ funded: d.funded, walletUsdc: d.walletUsdc, gatewayUsdc: d.gatewayUsdc });
+    } catch (e) {
+      setWalletErr((e as Error).message);
+    } finally {
+      setWalletBusy(null);
+    }
+  }
+
+  function copyAddress() {
+    if (!wallet) return;
+    navigator.clipboard?.writeText(wallet.address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
   function refreshStats() {
     fetch("/api/stats")
       .then((r) => r.json())
@@ -138,8 +205,9 @@ export default function AgentPage() {
     setSubject(subj);
     resetRun();
     setRealResult(null);
+    const walletParam = useOwnWallet ? `&walletId=${wallet!.walletId}` : "";
     try {
-      await streamNDJSON(`/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}`, (o) => {
+      await streamNDJSON(`/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}`, (o) => {
         if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
         else if (o.type === "done") setRealResult({ result: o.result });
         else if (o.type === "error") setErr(o.message);
@@ -225,6 +293,12 @@ export default function AgentPage() {
 
         {/* Live traction counter */}
         <StatsBar stats={stats} />
+        {!!stats?.onboardedWallets && (
+          <p className="mt-1.5 text-[11px] text-zinc-500">
+            + <span className="text-teal-300">{stats.onboardedWallets.toLocaleString()}</span> wallet
+            {stats.onboardedWallets === 1 ? "" : "s"} self-funded by visitors paying from their own balance.
+          </p>
+        )}
 
         {/* Tabs */}
         <div className="mt-6 flex gap-1 border-b border-zinc-800">
@@ -270,6 +344,98 @@ export default function AgentPage() {
             <div className="mt-3 space-y-1.5">
               <ChipRow label="Public" hint="→ should buy SEC filings" items={PUBLIC_EXAMPLES} onPick={runRealAgent} disabled={running} />
               <ChipRow label="Private" hint="→ should skip them" items={PRIVATE_EXAMPLES} onPick={runRealAgent} disabled={running} />
+            </div>
+
+            {/* Optional: pay from your own wallet */}
+            <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/40 backdrop-blur-sm">
+              <button
+                onClick={() => setWalletOpen((v) => !v)}
+                disabled={running}
+                className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm disabled:opacity-50"
+              >
+                <span className="text-zinc-300">
+                  {useOwnWallet ? (
+                    <>
+                      Paying from <span className="text-teal-300">your wallet</span>{" "}
+                      <span className="text-zinc-500">({wallet!.address.slice(0, 6)}…{wallet!.address.slice(-4)})</span>
+                    </>
+                  ) : (
+                    <>Pay from your own wallet <span className="text-zinc-500">· optional</span></>
+                  )}
+                </span>
+                <span className="text-zinc-500">{walletOpen ? "−" : "+"}</span>
+              </button>
+
+              {walletOpen && (
+                <div className="space-y-3 border-t border-zinc-800 px-4 py-3 text-sm">
+                  <p className="text-xs text-zinc-500">
+                    The runs above pay from a shared house wallet so you can watch real settlements instantly. To show up
+                    as a <span className="text-zinc-300">distinct payer</span>, generate your own Arc testnet wallet, fund
+                    it once at the official Circle faucet, then research from it. Testnet only — no real money.
+                  </p>
+
+                  {!wallet ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="email (optional)"
+                        className="w-56 rounded-md border border-zinc-700 bg-zinc-900/70 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-violet-500"
+                      />
+                      <button
+                        onClick={createWallet}
+                        disabled={walletBusy === "create"}
+                        className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
+                      >
+                        {walletBusy === "create" ? "Generating…" : "Generate wallet"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="rounded bg-zinc-950/60 px-2 py-1 text-xs text-zinc-300">{wallet.address}</code>
+                        <button onClick={copyAddress} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500">
+                          {copied ? "copied ✓" : "copy"}
+                        </button>
+                        <a
+                          href="https://faucet.circle.com"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded bg-sky-500/10 px-2 py-1 text-xs text-sky-300 hover:bg-sky-500/20"
+                        >
+                          open faucet.circle.com ↗
+                        </a>
+                      </div>
+                      <ol className="ml-4 list-decimal space-y-0.5 text-xs text-zinc-500">
+                        <li>Paste this address into faucet.circle.com, pick Arc testnet, request USDC (you also get native gas).</li>
+                        <li>Wait a few seconds for it to land, then check funding below.</li>
+                        <li>Once funded, your research runs pay from this wallet automatically.</li>
+                      </ol>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={checkFunding}
+                          disabled={walletBusy === "check"}
+                          className="rounded-md border border-zinc-700 bg-zinc-900/70 px-3 py-1.5 text-xs font-medium text-zinc-200 hover:border-zinc-500 disabled:opacity-50"
+                        >
+                          {walletBusy === "check" ? "Checking…" : "Check funding"}
+                        </button>
+                        {walletStatus && (
+                          <span className="text-xs">
+                            {walletStatus.funded ? (
+                              <span className="text-emerald-400">
+                                funded ✓ — {(walletStatus.walletUsdc + walletStatus.gatewayUsdc).toFixed(2)} USDC ready
+                              </span>
+                            ) : (
+                              <span className="text-amber-400">not funded yet — faucet it, then re-check</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {walletErr && <div className="text-xs text-red-400">{walletErr}</div>}
+                </div>
+              )}
             </div>
 
             <LiveActivity events={events} running={running} logRef={logRef} />

@@ -41,13 +41,25 @@ export async function GET() {
       at: r.created_at,
     }));
 
+    // Onboarded user-funded wallets — an honest, non-gameable traction signal.
+    // Best-effort: the table may not exist on older deployments.
+    let onboardedWallets = 0;
+    try {
+      const { count: wc } = await supabase
+        .from("user_wallets")
+        .select("*", { count: "exact", head: true });
+      onboardedWallets = wc ?? 0;
+    } catch {
+      // ignore — optional feature
+    }
+
     return NextResponse.json(
-      { totalPayments: total, totalUsdc, avgUsdc: avg, distinctPayers: payers, recent },
+      { totalPayments: total, totalUsdc, avgUsdc: avg, distinctPayers: payers, onboardedWallets, recent },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
     return NextResponse.json(
-      { totalPayments: 0, totalUsdc: 0, avgUsdc: 0, distinctPayers: 0, recent: [], error: (err as Error).message },
+      { totalPayments: 0, totalUsdc: 0, avgUsdc: 0, distinctPayers: 0, onboardedWallets: 0, recent: [], error: (err as Error).message },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
