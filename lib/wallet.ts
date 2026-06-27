@@ -26,6 +26,21 @@ export interface NewWallet {
   address: `0x${string}`;
 }
 
+async function findWalletByEmail(email: string): Promise<NewWallet | null> {
+  const { data, error } = await admin()
+    .from("user_wallets")
+    .select("id, address")
+    .eq("email", email)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1);
+
+  if (error) throw new Error(`Could not look up wallet: ${error.message}`);
+  const existing = data?.[0];
+  if (!existing) return null;
+  return { walletId: existing.id as string, address: existing.address as `0x${string}` };
+}
+
 /**
  * Return the existing wallet for an email, or create one if it does not exist.
  * Anonymous calls always create a fresh testnet wallet.
@@ -33,15 +48,9 @@ export interface NewWallet {
 export async function createUserWallet(email: string | null): Promise<NewWallet> {
   const normalizedEmail = email?.trim().toLowerCase() || null;
   if (normalizedEmail) {
-    const { data: existing, error: lookupError } = await admin()
-      .from("user_wallets")
-      .select("id, address")
-      .eq("email", normalizedEmail)
-      .maybeSingle();
-
-    if (lookupError) throw new Error(`Could not look up wallet: ${lookupError.message}`);
+    const existing = await findWalletByEmail(normalizedEmail);
     if (existing) {
-      return { walletId: existing.id as string, address: existing.address as `0x${string}` };
+      return existing;
     }
   }
 
@@ -55,14 +64,9 @@ export async function createUserWallet(email: string | null): Promise<NewWallet>
     .single();
 
   if (error && normalizedEmail && /duplicate|unique/i.test(error.message)) {
-    const { data: existing } = await admin()
-      .from("user_wallets")
-      .select("id, address")
-      .eq("email", normalizedEmail)
-      .maybeSingle();
-
+    const existing = await findWalletByEmail(normalizedEmail);
     if (existing) {
-      return { walletId: existing.id as string, address: existing.address as `0x${string}` };
+      return existing;
     }
   }
 
