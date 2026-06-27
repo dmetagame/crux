@@ -106,6 +106,26 @@ function pretty(id: string) {
   return id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+async function saveComparisonReceipt(
+  topic: string,
+  results: Record<string, Done>,
+  events: { label?: string; ev: AgentEvent }[],
+): Promise<ReceiptMeta | null> {
+  try {
+    const res = await fetch("/api/agent/compare/receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, budget: BUDGET, seed: "demo", results, events }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not save comparison receipt");
+    return { receiptId: data.receiptId, receiptUrl: data.receiptUrl };
+  } catch (err) {
+    console.warn("[receipt] comparison save failed:", (err as Error).message);
+    return null;
+  }
+}
+
 export default function AgentPage() {
   const [tab, setTab] = useState<"real" | "benchmark">("real");
   const [stats, setStats] = useState<Stats | null>(null);
@@ -122,6 +142,7 @@ export default function AgentPage() {
   const [mode, setMode] = useState<"run" | "compare" | null>(null);
   const [result, setResult] = useState<Done | null>(null);
   const [compare, setCompare] = useState<Record<string, Done>>({});
+  const [compareReceipt, setCompareReceipt] = useState<ReceiptMeta | null>(null);
   const [active, setActive] = useState<string | null>(null);
 
   // real state
@@ -235,6 +256,7 @@ export default function AgentPage() {
     resetRun();
     setResult(null);
     setCompare({});
+    setCompareReceipt(null);
     setActive(null);
     try {
       await streamNDJSON(`/api/agent/run?topic=${encodeURIComponent(topic)}&budget=${BUDGET}`, (o) => {
@@ -255,8 +277,11 @@ export default function AgentPage() {
     resetRun();
     setResult(null);
     setCompare({});
+    setCompareReceipt(null);
     setActive(null);
     const enc = encodeURIComponent(topic);
+    const comparison: Record<string, Done> = {};
+    const comparisonEvents: { label?: string; ev: AgentEvent }[] = [];
     const steps = [
       { label: "reasoning-agent", url: `/api/agent/run?topic=${enc}&budget=${BUDGET}` },
       { label: "buy-cheapest", url: `/api/agent/baseline?strategy=cheapest&topic=${enc}&budget=${BUDGET}` },
@@ -266,13 +291,21 @@ export default function AgentPage() {
       for (const s of steps) {
         setActive(s.label);
         await streamNDJSON(s.url, (o) => {
-          if (o.type === "event") setEvents((e) => [...e, { label: s.label, ev: o.event }]);
+          if (o.type === "event") {
+            const entry = { label: s.label, ev: o.event };
+            comparisonEvents.push(entry);
+            setEvents((e) => [...e, entry]);
+          }
           else if (o.type === "done") {
-            setCompare((c) => ({ ...c, [s.label]: { result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl } }));
+            const done = { result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl };
+            comparison[s.label] = done;
+            setCompare((c) => ({ ...c, [s.label]: done }));
           }
           else if (o.type === "error") setErr(o.message);
         });
       }
+      const receipt = await saveComparisonReceipt(topic, comparison, comparisonEvents);
+      setCompareReceipt(receipt);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -509,7 +542,10 @@ export default function AgentPage() {
 
             {mode === "compare" && Object.keys(compare).length > 0 && (
               <section className="mt-6">
-                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">Comparison — {topic}</h2>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Comparison — {topic}</h2>
+                  <ReceiptLink done={compareReceipt ?? {}} label="Open comparison receipt ↗" />
+                </div>
                 <div className="overflow-hidden rounded-lg border border-zinc-800">
                   <table className="w-full text-sm">
                     <thead className="bg-zinc-900/55 text-left text-zinc-400 backdrop-blur-sm">
@@ -877,7 +913,7 @@ function RealResultPanel({ done }: { done: RealDone }) {
   );
 }
 
-function ReceiptLink({ done }: { done: ReceiptMeta }) {
+function ReceiptLink({ done, label = "Open receipt ↗" }: { done: ReceiptMeta; label?: string }) {
   if (!done.receiptUrl) return null;
   return (
     <a
@@ -886,7 +922,7 @@ function ReceiptLink({ done }: { done: ReceiptMeta }) {
       rel="noreferrer"
       className="rounded border border-teal-500/30 bg-teal-500/10 px-2 py-1 text-xs font-medium text-teal-300 hover:border-teal-400/70"
     >
-      Open receipt ↗
+      {label}
     </a>
   );
 }

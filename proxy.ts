@@ -24,7 +24,9 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authed = isAdminSession(session);
   const adminRoute =
-    pathname.startsWith("/dashboard") || pathname.startsWith("/api/gateway/");
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/api/gateway/") ||
+    pathname.startsWith("/api/dashboard/");
 
   // Logged-in user trying to access sign-in page -> redirect to dashboard
   if (pathname === "/" && authed) {
@@ -32,6 +34,10 @@ export function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api/gateway/") && !authed) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (pathname.startsWith("/api/dashboard/") && !authed) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -44,5 +50,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*", "/api/gateway/:path*"],
+  matcher: ["/", "/dashboard/:path*", "/api/gateway/:path*", "/api/dashboard/:path*"],
 };

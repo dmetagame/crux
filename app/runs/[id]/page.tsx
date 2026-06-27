@@ -34,6 +34,13 @@ type ReceiptScore = {
   missedFacts?: { id: string; fact: string; weight: number }[];
 };
 
+type ComparisonRow = {
+  key: string;
+  label: string;
+  result: Record<string, any>;
+  score: ReceiptScore;
+};
+
 const SOURCE_NAMES = new Map([
   ...SOURCES.map((s) => [s.id, { name: s.name, price: s.price }] as const),
   ...REAL_SOURCES.map((s) => [s.id, { name: s.name, price: s.price }] as const),
@@ -57,9 +64,21 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   if (!receipt) notFound();
 
   const payload = receipt.payload;
-  const result = asRecord(payload.result);
-  const score = asRecord(payload.score) as ReceiptScore | null;
-  const events = asArray(payload.events) as ReceiptEvent[];
+  const isComparison = payload.kind === "comparison";
+  const comparisonRows = isComparison ? comparisonRowsFromPayload(payload) : [];
+  const agentRow = comparisonRows.find((row) => row.key === "reasoning-agent");
+  const result = isComparison ? agentRow?.result ?? null : asRecord(payload.result);
+  const score = (isComparison ? agentRow?.score ?? null : asRecord(payload.score)) as ReceiptScore | null;
+  const events = (
+    isComparison
+      ? asArray(payload.events)
+          .map((event) => {
+            const row = asRecord(event);
+            return row?.label === "reasoning-agent" ? row.ev : null;
+          })
+          .filter(Boolean)
+      : asArray(payload.events)
+  ) as ReceiptEvent[];
   const ledger = asArray(result?.ledger) as LedgerEntry[];
   const citations = asArray(result?.citations) as { sourceId: string; url: string }[];
   const brief = typeof result?.brief === "string" ? result.brief : "";
@@ -77,12 +96,12 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">Run receipt</h1>
               <span className="rounded bg-teal-500/10 px-2 py-1 text-xs font-medium text-teal-300">
-                {receipt.mode === "real" ? "real subject" : "scored benchmark"}
+                {isComparison ? "benchmark comparison" : receipt.mode === "real" ? "real subject" : "scored benchmark"}
               </span>
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Verifiable Crux artifact for <span className="text-zinc-200">{receipt.subject}</span>: budget, source
-              decisions, final brief, and Gateway settlement proof.
+              decisions, final brief, {isComparison ? "baseline comparison, " : ""}and Gateway settlement proof.
             </p>
           </div>
           <div className="text-right text-xs text-zinc-500">
@@ -92,12 +111,14 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
         </div>
 
         <section className="grid grid-cols-2 gap-3 md:grid-cols-5">
-          <Stat label="budget" value={money(receipt.budgetUsdc)} />
-          <Stat label="spent" value={money(receipt.spentUsdc)} />
-          <Stat label="sources bought" value={String(ledger.length)} />
+          <Stat label={isComparison ? "budget / run" : "budget"} value={money(receipt.budgetUsdc)} />
+          <Stat label={isComparison ? "total spent" : "spent"} value={money(receipt.spentUsdc)} />
+          <Stat label={isComparison ? "agent buys" : "sources bought"} value={String(ledger.length)} />
           <Stat label="payer" value={receipt.payerKind === "visitor-wallet" ? "visitor" : "house"} />
           <Stat label="model" value={receipt.model?.replace("anthropic/", "") ?? "unknown"} />
         </section>
+
+        {comparisonRows.length > 0 && <ComparisonSummary rows={comparisonRows} />}
 
         {score && (
           <section className="mt-5 rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -133,7 +154,9 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
         <section className="mt-5 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/45 backdrop-blur-sm">
           <div className="border-b border-zinc-800 px-4 py-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Source decisions</h2>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {isComparison ? "Agent source decisions" : "Source decisions"}
+            </h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -184,7 +207,9 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
         <section className="mt-5 grid gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 backdrop-blur-sm md:col-span-2">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Final brief</h2>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {isComparison ? "Agent final brief" : "Final brief"}
+            </h2>
             <div className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{brief || "(no brief captured)"}</div>
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 backdrop-blur-sm">
@@ -243,6 +268,52 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ComparisonSummary({ rows }: { rows: ComparisonRow[] }) {
+  return (
+    <section className="mt-5 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/45 backdrop-blur-sm">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Agent vs baselines</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-950/40 text-left text-xs text-zinc-500">
+            <tr>
+              <th className="px-4 py-2 font-medium">Strategy</th>
+              <th className="px-4 py-2 font-medium">Spent</th>
+              <th className="px-4 py-2 font-medium">Buys</th>
+              <th className="px-4 py-2 font-medium">Coverage</th>
+              <th className="px-4 py-2 font-medium">False claim</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const ledger = asArray(row.result.ledger);
+              const strong = row.score.coverage >= 0.9 && !row.score.falseClaim;
+              return (
+                <tr key={row.key} className={`border-t border-zinc-800 ${row.key === "reasoning-agent" ? "bg-emerald-500/5" : ""}`}>
+                  <td className="px-4 py-3 font-medium text-zinc-200">{row.label}</td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-400">{money(Number(row.result.spent))}</td>
+                  <td className="px-4 py-3 tabular-nums text-zinc-400">{ledger.length}</td>
+                  <td className={`px-4 py-3 tabular-nums ${strong ? "text-emerald-400" : "text-amber-400"}`}>
+                    {row.score.weighted}/{row.score.maxWeighted} ({Math.round(row.score.coverage * 100)}%)
+                  </td>
+                  <td className="px-4 py-3">
+                    {row.score.falseClaim ? (
+                      <span className="rounded bg-red-500/15 px-2 py-1 text-xs font-medium text-red-400">YES - rumor</span>
+                    ) : (
+                      <span className="text-emerald-400">no</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function ProofLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 border-b border-zinc-800/60 pb-1 last:border-0">
@@ -250,6 +321,27 @@ function ProofLine({ label, value }: { label: string; value: string }) {
       <span className="tabular-nums text-zinc-200">{value}</span>
     </div>
   );
+}
+
+function comparisonRowsFromPayload(payload: Record<string, unknown>): ComparisonRow[] {
+  const results = asRecord(payload.results);
+  if (!results) return [];
+
+  const labels: Record<string, string> = {
+    "reasoning-agent": "Reasoning agent",
+    "buy-cheapest": "Buy cheapest",
+    "buy-by-quality": "Buy by quality",
+  };
+
+  return ["reasoning-agent", "buy-cheapest", "buy-by-quality"]
+    .map((key) => {
+      const done = asRecord(results[key]);
+      const result = asRecord(done?.result);
+      const score = asRecord(done?.score) as ReceiptScore | null;
+      if (!result || !score) return null;
+      return { key, label: labels[key] ?? pretty(key), result, score };
+    })
+    .filter((row): row is ComparisonRow => Boolean(row));
 }
 
 function sourceName(id: string) {

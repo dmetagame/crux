@@ -16,9 +16,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useEffect, useState } from "react";
 
 export type Withdrawal = {
   id: string;
@@ -33,78 +31,29 @@ export type Withdrawal = {
 export function useWithdrawals() {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
-  const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    const supabase = createClient();
+    let cancelled = false;
 
-    async function fetchInitial() {
-      const { data, error } = await supabase
-        .from("withdrawals")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Failed to fetch withdrawals:", error.message);
-      } else {
-        setWithdrawals((prev) => {
-          if (prev.length === 0) return data as Withdrawal[];
-          const fetched = data as Withdrawal[];
-          const existingIds = new Set(fetched.map((e) => e.id));
-          const realtimeOnly = prev.filter((e) => !existingIds.has(e.id));
-          return [...realtimeOnly, ...fetched];
-        });
+    async function fetchWithdrawals() {
+      try {
+        const res = await fetch("/api/dashboard/withdrawals", { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to fetch withdrawals");
+        if (!cancelled) setWithdrawals(data.withdrawals as Withdrawal[]);
+      } catch (err) {
+        console.error("Failed to fetch withdrawals:", (err as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
 
-    const channel = supabase
-      .channel("withdrawals-realtime")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "withdrawals" },
-        (payload) => {
-          setWithdrawals((prev) => {
-            const newItem = payload.new as Withdrawal;
-            if (prev.some((w) => w.id === newItem.id)) return prev;
-            return [newItem, ...prev];
-          });
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "withdrawals" },
-        (payload) => {
-          setWithdrawals((prev) =>
-            prev.map((w) =>
-              w.id === (payload.new as Withdrawal).id
-                ? (payload.new as Withdrawal)
-                : w,
-            ),
-          );
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "withdrawals" },
-        (payload) => {
-          setWithdrawals((prev) =>
-            prev.filter(
-              (w) => w.id !== (payload.old as { id: string }).id,
-            ),
-          );
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          fetchInitial();
-        }
-      });
-
-    channelRef.current = channel;
+    fetchWithdrawals();
+    const id = setInterval(fetchWithdrawals, 8000);
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      clearInterval(id);
     };
   }, []);
 

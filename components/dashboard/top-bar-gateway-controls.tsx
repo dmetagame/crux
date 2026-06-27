@@ -24,14 +24,11 @@ import { Button } from "@/components/ui/button";
 import { GatewayBalanceDialog, type GatewayBalances } from "./gateway-balance-dialog";
 import { WithdrawDialog } from "./withdraw-dialog";
 import { Info, Loader2 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export function TopBarGatewayControls() {
   const [balances, setBalances] = useState<GatewayBalances | null>(null);
   const [loading, setLoading] = useState(false);
-  const channelRef = useRef<RealtimeChannel | null>(null);
   const balancesRef = useRef<GatewayBalances | null>(null);
 
   const fetchBalances = useCallback(async () => {
@@ -57,36 +54,11 @@ export function TopBarGatewayControls() {
   }, []);
 
   useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel("balance-refresh")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "payment_events" },
-        () => {
-          // Gateway offchain balance is credited immediately after settlement,
-          // so a single refetch is sufficient.
-          fetchBalances();
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "withdrawals" },
-        () => {
-          // Wallet USDC balance may change after a withdrawal completes.
-          fetchBalances();
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          fetchBalances();
-        }
-      });
-
-    channelRef.current = channel;
+    fetchBalances();
+    const id = setInterval(fetchBalances, 8000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(id);
     };
   }, [fetchBalances]);
 
