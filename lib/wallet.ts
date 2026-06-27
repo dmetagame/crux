@@ -26,19 +26,48 @@ export interface NewWallet {
   address: `0x${string}`;
 }
 
-/** Generate a fresh testnet wallet, persist it, and return its id + address. */
+/**
+ * Return the existing wallet for an email, or create one if it does not exist.
+ * Anonymous calls always create a fresh testnet wallet.
+ */
 export async function createUserWallet(email: string | null): Promise<NewWallet> {
+  const normalizedEmail = email?.trim().toLowerCase() || null;
+  if (normalizedEmail) {
+    const { data: existing, error: lookupError } = await admin()
+      .from("user_wallets")
+      .select("id, address")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (lookupError) throw new Error(`Could not look up wallet: ${lookupError.message}`);
+    if (existing) {
+      return { walletId: existing.id as string, address: existing.address as `0x${string}` };
+    }
+  }
+
   const privateKey = generatePrivateKey();
   const address = privateKeyToAccount(privateKey).address;
 
   const { data, error } = await admin()
     .from("user_wallets")
-    .insert({ email: email || null, address, private_key: privateKey })
-    .select("id")
+    .insert({ email: normalizedEmail, address, private_key: privateKey })
+    .select("id, address")
     .single();
 
+  if (error && normalizedEmail && /duplicate|unique/i.test(error.message)) {
+    const { data: existing } = await admin()
+      .from("user_wallets")
+      .select("id, address")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (existing) {
+      return { walletId: existing.id as string, address: existing.address as `0x${string}` };
+    }
+  }
+
   if (error) throw new Error(`Could not create wallet: ${error.message}`);
-  return { walletId: data.id as string, address };
+  return { walletId: data.id as string, address: data.address as `0x${string}` };
 }
 
 /** Resolve a walletId to its private key (server-side only). Null if unknown. */

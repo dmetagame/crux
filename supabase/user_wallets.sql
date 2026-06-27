@@ -18,6 +18,9 @@ create table if not exists public.user_wallets (
 
 -- Distinct-payer / onboarding signal reads this; keep lookups fast.
 create index if not exists user_wallets_created_at_idx on public.user_wallets (created_at desc);
+create unique index if not exists user_wallets_email_unique_idx
+  on public.user_wallets (email)
+  where email is not null;
 
 -- Service-role only (the server uses the service-role key). No anon access:
 -- the private_key column must never be exposed to the browser.

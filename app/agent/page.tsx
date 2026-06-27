@@ -384,8 +384,9 @@ export default function AgentPage() {
                 <div className="space-y-3 border-t border-zinc-800 px-4 py-3 text-sm">
                   <p className="text-xs text-zinc-500">
                     The runs above pay from a shared house wallet so you can watch real settlements instantly. To show up
-                    as a <span className="text-zinc-300">distinct payer</span>, generate your own Arc testnet wallet, fund
-                    it once at the official Circle faucet, then research from it. Testnet only — no real money.
+                    as a <span className="text-zinc-300">distinct payer</span>, get your own Arc testnet wallet, fund it
+                    once at the official Circle faucet, then research from it. Use the same email later to recover the
+                    same wallet. Testnet only — no real money.
                   </p>
 
                   {!wallet ? (
@@ -401,7 +402,7 @@ export default function AgentPage() {
                         disabled={walletBusy === "create"}
                         className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50"
                       >
-                        {walletBusy === "create" ? "Generating…" : "Generate wallet"}
+                        {walletBusy === "create" ? "Checking…" : email.trim() ? "Get wallet" : "Generate wallet"}
                       </button>
                     </div>
                   ) : (
