@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useState } from "react";
+import type { SettlementKind, SettlementStatus } from "@/lib/settlement";
 
 export type PaymentEvent = {
   id: string;
@@ -26,6 +27,14 @@ export type PaymentEvent = {
   amount_usdc: string;
   network: string;
   gateway_tx: string | null;
+  settlement_reference: string | null;
+  settlement_kind: SettlementKind;
+  settlement_status: SettlementStatus;
+  arc_tx_hash: string | null;
+  arc_chain_id: number | null;
+  arc_block_number: string | null;
+  arc_confirmed_at: string | null;
+  settlement_checked_at: string | null;
   raw?: Record<string, unknown> | null;
 };
 

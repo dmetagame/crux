@@ -19,6 +19,7 @@
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
 
 // Arc Testnet contract addresses (from @circle-fin/x402-batching SDK)
 const ARC_TESTNET_NETWORK = "eip155:5042002";
@@ -191,14 +192,32 @@ export function withGateway(
       ).toString();
       const payer = settleResult.payer ?? verifyResult.payer ?? "unknown";
 
-      const { error } = await supabase.from("payment_events").insert({
+      const settlementProof = await buildSettlementProofColumns(
+        settleResult.transaction ?? null,
+      );
+      const event = {
         endpoint,
         payer,
         amount_usdc: amountUsdc,
         network: requirements.network,
-        gateway_tx: settleResult.transaction ?? null,
-        raw: { requirements, settleResult },
-      });
+        gateway_tx: settlementProof.settlement_reference,
+        ...settlementProof,
+        raw: { requirements, settleResult, settlementProof },
+      };
+
+      let { error } = await supabase.from("payment_events").insert(event);
+
+      if (error && isSettlementProofColumnError(error.message)) {
+        const { error: fallbackError } = await supabase.from("payment_events").insert({
+          endpoint,
+          payer,
+          amount_usdc: amountUsdc,
+          network: requirements.network,
+          gateway_tx: settlementProof.settlement_reference,
+          raw: { requirements, settleResult, settlementProof },
+        });
+        error = fallbackError;
+      }
 
       if (error) {
         console.error("Failed to record payment event:", error.message);
@@ -215,9 +234,12 @@ export function withGateway(
       const settleResponseHeader = Buffer.from(
         JSON.stringify({
           success: true,
-          transaction: settleResult.transaction,
+          transaction: settlementProof.settlement_reference,
           network: requirements.network,
           payer,
+          settlementKind: settlementProof.settlement_kind,
+          settlementStatus: settlementProof.settlement_status,
+          arcTxHash: settlementProof.arc_tx_hash,
         }),
       ).toString("base64");
 
@@ -233,4 +255,10 @@ export function withGateway(
       );
     }
   };
+}
+
+function isSettlementProofColumnError(message: string) {
+  return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
+    message,
+  );
 }

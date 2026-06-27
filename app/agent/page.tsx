@@ -2,7 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import TopoBackground from "@/components/topo-background";
-import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
+import {
+  settlementExplorerUrl,
+  settlementLabel,
+  settlementStatusLabel,
+  type SettlementKind,
+  type SettlementStatus,
+} from "@/lib/settlement";
 
 // --- Types (mirror the streaming API; kept local to the client) ---
 type AgentEvent =
@@ -63,6 +69,13 @@ interface RecentPayment {
   amount: number;
   endpoint: string;
   tx?: string | null;
+  settlementReference?: string | null;
+  settlementKind?: SettlementKind;
+  settlementStatus?: SettlementStatus;
+  arcTxHash?: string | null;
+  arcChainId?: number | null;
+  arcBlockNumber?: string | null;
+  arcConfirmedAt?: string | null;
   at: string;
 }
 
@@ -417,7 +430,7 @@ export default function AgentPage() {
               {walletOpen && (
                 <div className="space-y-3 border-t border-zinc-800 px-4 py-3 text-sm">
                   <p className="text-xs text-zinc-500">
-                    The runs above pay from a shared house wallet so you can watch real settlements instantly. To show up
+                    The runs above pay from a shared house wallet so you can watch Gateway-settled x402 payments instantly. To show up
                     as a <span className="text-zinc-300">distinct payer</span>, get your own Arc testnet wallet, fund it
                     once at the official Circle faucet, then research from it. Use the same email later to recover the
                     same wallet. Testnet only — no real money.
@@ -602,7 +615,7 @@ export default function AgentPage() {
         )}
 
         <footer className="mt-10 border-t border-zinc-900 pt-4 text-xs text-zinc-600">
-          Payments settle on Arc testnet via Circle Gateway batching. LLM routed through the Vercel AI Gateway.
+          Payments settle through Circle Gateway batching on Arc testnet; ArcScan links appear when Gateway returns an EVM tx hash.
         </footer>
       </div>
     </div>
@@ -626,7 +639,7 @@ function TabButton({ active, onClick, disabled, children }: { active: boolean; o
 function StatsBar({ stats }: { stats: Stats | null }) {
   const cells = [
     { label: "autonomous payments", value: stats ? stats.totalPayments.toLocaleString() : "—" },
-    { label: "test-USDC settled", value: stats ? `$${stats.totalUsdc.toFixed(3)}` : "—" },
+    { label: "Gateway-settled USDC", value: stats ? `$${stats.totalUsdc.toFixed(3)}` : "—" },
     { label: "avg tx size", value: stats ? `$${stats.avgUsdc.toFixed(4)}` : "—" },
     { label: "distinct payers", value: stats ? stats.distinctPayers.toLocaleString() : "—" },
   ];
@@ -643,33 +656,37 @@ function StatsBar({ stats }: { stats: Stats | null }) {
 }
 
 function RecentSettlementFeed({ stats }: { stats: Stats | null }) {
-  const recent = stats?.recent?.filter((p) => p.tx).slice(0, 4) ?? [];
+  const recent =
+    stats?.recent?.filter((p) => p.settlementReference ?? p.tx).slice(0, 4) ??
+    [];
   if (!recent.length) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
       <span className="uppercase tracking-wide text-zinc-600">Latest Gateway settlements</span>
       {recent.map((p, i) => {
-        const href = settlementExplorerUrl(p.tx!);
-        const label = href
-          ? `Arc tx ${shortSettlementId(p.tx!, 8)}`
-          : `Gateway ${shortSettlementId(p.tx!, 8)}`;
+        const reference = p.settlementReference ?? p.tx!;
+        const href = p.arcTxHash
+          ? settlementExplorerUrl(p.arcTxHash)
+          : settlementExplorerUrl(reference);
+        const label = settlementLabel(reference, 8);
+        const proof = settlementStatusLabel(p.settlementStatus);
         const title = `${p.endpoint} at ${new Date(p.at).toLocaleString()}`;
         const className =
           "rounded border border-zinc-800 bg-zinc-950/45 px-2 py-1 tabular-nums text-zinc-400";
         return href ? (
           <a
-            key={`${p.tx}-${i}`}
+            key={`${reference}-${i}`}
             href={href}
             target="_blank"
             rel="noreferrer"
             className={`${className} hover:border-teal-500/60 hover:text-teal-300`}
             title={title}
           >
-            ${p.amount.toFixed(4)} · {label}
+            ${p.amount.toFixed(4)} · {proof} · {label}
           </a>
         ) : (
-          <span key={`${p.tx}-${i}`} className={className} title={`${title} · ${p.tx}`}>
-            ${p.amount.toFixed(4)} · {label}
+          <span key={`${reference}-${i}`} className={className} title={`${title} · ${reference}`}>
+            ${p.amount.toFixed(4)} · {proof} · {label}
           </span>
         );
       })}
@@ -687,12 +704,12 @@ function JudgeProofPanel() {
     {
       pct: "30%",
       name: "Traction",
-      text: "Every run emits settled test-USDC payments, plus optional visitor-funded wallets for distinct payer signal.",
+      text: "Every run emits Gateway-settled test-USDC payments, plus optional visitor-funded wallets for distinct payer signal.",
     },
     {
       pct: "20%",
       name: "Circle/Arc",
-      text: "x402 seller routes, Circle Gateway batching, Arc testnet settlement, USDC-denominated budgets.",
+      text: "x402 seller routes, Circle Gateway batching on Arc testnet, USDC-denominated budgets.",
     },
     {
       pct: "20%",
@@ -776,7 +793,7 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
       <span className="font-medium text-emerald-400">paid {ev.price}</span> for{" "}
       <span className="text-zinc-200">{pretty(ev.sourceId)}</span>{" "}
       {ev.delivered ? (
-        <span className="text-zinc-500">· settled on Arc</span>
+        <span className="text-zinc-500">· Gateway settled</span>
       ) : (
         <span className="text-amber-400">· paid, no usable data</span>
       )}
@@ -790,7 +807,7 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
 
 function SettlementReference({ tx, className }: { tx: string; className?: string }) {
   const href = settlementExplorerUrl(tx);
-  const label = href ? `Arc tx ${shortSettlementId(tx, 8)}` : `Gateway settlement ${shortSettlementId(tx, 8)}`;
+  const label = settlementLabel(tx, 8);
   if (href) {
     return (
       <a
@@ -804,7 +821,7 @@ function SettlementReference({ tx, className }: { tx: string; className?: string
     );
   }
   return (
-    <span className={className} title={`Circle Gateway settlement id: ${tx}`}>
+    <span className={className} title={`Circle Gateway settlement reference: ${tx}`}>
       · {label}
     </span>
   );

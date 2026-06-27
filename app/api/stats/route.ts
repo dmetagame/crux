@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  ARC_TESTNET_CHAIN_ID,
+  classifySettlementReference,
+} from "@/lib/settlement";
 
 export const maxDuration = 15;
 
 /**
  * Live traction counter. Aggregates the payment_events table that withGateway
- * writes on every settlement — total autonomous payments, total test-USDC moved,
+ * writes on every Gateway settlement — total autonomous payments, total test-USDC moved,
  * average (sub-cent) transaction size, distinct payers, and the latest payments.
- * This is the RFB-01 traction metric, read straight from on-chain settlements.
+ * This is the RFB-01 traction metric, with Arc tx confirmation shown when
+ * Circle Gateway exposes a normal EVM transaction hash.
  */
 export async function GET() {
   try {
@@ -20,11 +25,26 @@ export async function GET() {
       .from("payment_events")
       .select("*", { count: "exact", head: true });
 
-    const { data: rows, error } = await supabase
+    const proofSelect =
+      "amount_usdc, payer, endpoint, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, created_at";
+
+    const proofQuery = await supabase
       .from("payment_events")
-      .select("amount_usdc, payer, endpoint, gateway_tx, created_at")
+      .select(proofSelect)
       .order("created_at", { ascending: false })
       .limit(5000);
+    let rows: any[] | null = proofQuery.data;
+    let error = proofQuery.error;
+
+    if (error && isSettlementProofColumnError(error.message)) {
+      const fallback = await supabase
+        .from("payment_events")
+        .select("amount_usdc, payer, endpoint, gateway_tx, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      rows = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) throw error;
 
@@ -35,12 +55,7 @@ export async function GET() {
     const payers = payerSet.size;
     const avg = all.length ? totalUsdc / all.length : 0;
 
-    const recent = all.slice(0, 8).map((r) => ({
-      amount: parseFloat(r.amount_usdc) || 0,
-      endpoint: r.endpoint,
-      tx: r.gateway_tx,
-      at: r.created_at,
-    }));
+    const recent = all.slice(0, 8).map(normalizeRecentPayment);
 
     // Self-funded wallets — an honest, non-gameable traction signal: a visitor's
     // own generated wallet that ACTUALLY settled a payment (so merely clicking
@@ -69,4 +84,36 @@ export async function GET() {
       { headers: { "Cache-Control": "no-store" } },
     );
   }
+}
+
+function normalizeRecentPayment(row: any) {
+  const classified = classifySettlementReference(
+    row.settlement_reference ?? row.gateway_tx,
+  );
+
+  return {
+    amount: parseFloat(row.amount_usdc) || 0,
+    endpoint: row.endpoint,
+    tx: row.gateway_tx,
+    settlementReference:
+      row.settlement_reference ?? classified.settlementReference,
+    settlementKind: row.settlement_kind ?? classified.settlementKind,
+    settlementStatus: row.settlement_status ?? classified.settlementStatus,
+    arcTxHash: row.arc_tx_hash ?? classified.arcTxHash,
+    arcChainId:
+      row.arc_chain_id ??
+      (classified.arcTxHash ? ARC_TESTNET_CHAIN_ID : null),
+    arcBlockNumber:
+      row.arc_block_number === undefined || row.arc_block_number === null
+        ? null
+        : String(row.arc_block_number),
+    arcConfirmedAt: row.arc_confirmed_at ?? null,
+    at: row.created_at,
+  };
+}
+
+function isSettlementProofColumnError(message: string) {
+  return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
+    message,
+  );
 }

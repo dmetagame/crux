@@ -2,7 +2,7 @@
  * Reusable autonomous research-agent core (AI SDK + AI Gateway).
  *
  * Extracted so the CLI (research-agent.mts) and the baseline comparison
- * (compare.mts) share the exact same marketplace, real on-chain settlement, and
+ * (compare.mts) share the exact same marketplace, real Gateway settlement, and
  * scorer. Pure: takes options, returns a RunResult — no env reads, no printing
  * (callers pass an onEvent logger if they want live output).
  */
@@ -17,7 +17,7 @@ export interface LedgerEntry {
   price: string;
   delivered: boolean;
   rationale: string;
-  /** On-chain settlement tx/batch id from gateway.pay (Arc testnet). */
+  /** Gateway settlement reference, or an Arc tx hash when Gateway exposes one. */
   tx?: string;
 }
 

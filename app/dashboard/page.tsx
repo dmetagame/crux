@@ -52,7 +52,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { shortenHash } from "@/lib/utils";
-import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
+import {
+  settlementExplorerUrl,
+  settlementLabel,
+  settlementStatusLabel,
+} from "@/lib/settlement";
 import { usePaymentEvents } from "@/hooks/use-transactions";
 import { useWithdrawals } from "@/hooks/use-withdrawals";
 
@@ -139,6 +143,16 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant={variant}>{status}</Badge>;
 }
 
+function SettlementStatusBadge({ status }: { status: string }) {
+  const variant =
+    status === "arc_confirmed"
+      ? "default"
+      : status === "arc_failed"
+        ? "destructive"
+        : "secondary";
+  return <Badge variant={variant}>{settlementStatusLabel(status)}</Badge>;
+}
+
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 export default function Dashboard() {
@@ -172,6 +186,9 @@ export default function Dashboard() {
       result = result.filter(
         (ev) =>
           (ev.gateway_tx ?? "").toLowerCase().includes(query) ||
+          (ev.settlement_reference ?? "").toLowerCase().includes(query) ||
+          (ev.arc_tx_hash ?? "").toLowerCase().includes(query) ||
+          ev.settlement_status.toLowerCase().includes(query) ||
           ev.payer.toLowerCase().includes(query) ||
           ev.endpoint.toLowerCase().includes(query),
       );
@@ -299,7 +316,7 @@ export default function Dashboard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Gateway settlement</TableHead>
+                  <TableHead>Settlement proof</TableHead>
                   <TableHead>Payer</TableHead>
                   <TableHead>Endpoint</TableHead>
                   <TableHead className="text-right">
@@ -345,39 +362,52 @@ export default function Dashboard() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedPayments.map((ev) => (
-                    <TableRow key={ev.id}>
-                      <TableCell className="font-mono text-xs">
-                        {ev.gateway_tx ? (
+                  paginatedPayments.map((ev) => {
+                    const reference = ev.settlement_reference ?? ev.gateway_tx;
+                    const href = ev.arc_tx_hash
+                      ? settlementExplorerUrl(ev.arc_tx_hash) ?? undefined
+                      : undefined;
+                    return (
+                      <TableRow key={ev.id}>
+                        <TableCell className="text-xs">
+                          {reference ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="font-mono">
+                                <CopyableCell
+                                  value={reference}
+                                  label={settlementLabel(reference, 6)}
+                                  href={href}
+                                />
+                              </span>
+                              <span>
+                                <SettlementStatusBadge status={ev.settlement_status} />
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Recorded</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
                           <CopyableCell
-                            value={ev.gateway_tx}
-                            label={shortSettlementId(ev.gateway_tx, 6)}
-                            href={settlementExplorerUrl(ev.gateway_tx) ?? undefined}
+                            value={ev.payer}
+                            label={shortenHash(ev.payer)}
+                            href={`${EXPLORER_BASE}/address/${ev.payer}`}
                           />
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        <CopyableCell
-                          value={ev.payer}
-                          label={shortenHash(ev.payer)}
-                          href={`${EXPLORER_BASE}/address/${ev.payer}`}
-                        />
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-                          {ev.endpoint}
-                        </code>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
-                        ${ev.amount_usdc}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {formatDate(ev.created_at)}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                            {ev.endpoint}
+                          </code>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          ${ev.amount_usdc}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {formatDate(ev.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

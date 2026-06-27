@@ -6,7 +6,7 @@ import TopoBackground from "@/components/topo-background";
 import { SOURCES } from "@/lib/marketplace";
 import { REAL_SOURCES } from "@/lib/real-sources";
 import { getRunReceipt } from "@/lib/run-receipts";
-import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
+import { settlementExplorerUrl, settlementLabel } from "@/lib/settlement";
 
 type ReceiptPageProps = {
   params: Promise<{ id: string }>;
@@ -217,7 +217,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             <div className="space-y-2 text-sm text-zinc-400">
               <ProofLine label="Previews" value={String(previews.size)} />
               <ProofLine label="Purchases" value={String(ledger.length)} />
-              <ProofLine label="Settlements" value={String(ledger.filter((l) => l.tx).length)} />
+              <ProofLine label="Settlement refs" value={String(ledger.filter((l) => l.tx).length)} />
               <ProofLine label="Tokens" value={String(result?.tokens ?? "unknown")} />
             </div>
             {citations.length > 0 && (
@@ -359,7 +359,7 @@ function money(value: number | null) {
 
 function SettlementReference({ tx }: { tx: string }) {
   const href = settlementExplorerUrl(tx);
-  const label = href ? `Arc tx ${shortSettlementId(tx, 10)}` : `Gateway settlement ${shortSettlementId(tx, 10)}`;
+  const label = settlementLabel(tx, 10);
   if (href) {
     return (
       <a
@@ -373,7 +373,7 @@ function SettlementReference({ tx }: { tx: string }) {
     );
   }
   return (
-    <span className="mt-1 inline-block text-xs text-teal-300" title={`Circle Gateway settlement id: ${tx}`}>
+    <span className="mt-1 inline-block text-xs text-teal-300" title={`Circle Gateway settlement reference: ${tx}`}>
       {label}
     </span>
   );
