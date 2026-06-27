@@ -31,7 +31,8 @@ export async function GET() {
     const all = rows ?? [];
     const total = count ?? all.length;
     const totalUsdc = all.reduce((s, r) => s + (parseFloat(r.amount_usdc) || 0), 0);
-    const payers = new Set(all.map((r) => r.payer)).size;
+    const payerSet = new Set(all.map((r) => r.payer));
+    const payers = payerSet.size;
     const avg = all.length ? totalUsdc / all.length : 0;
 
     const recent = all.slice(0, 8).map((r) => ({
@@ -41,14 +42,19 @@ export async function GET() {
       at: r.created_at,
     }));
 
-    // Onboarded user-funded wallets — an honest, non-gameable traction signal.
-    // Best-effort: the table may not exist on older deployments.
+    // Self-funded wallets — an honest, non-gameable traction signal: a visitor's
+    // own generated wallet that ACTUALLY settled a payment (so merely clicking
+    // "generate" without faucet'ing doesn't inflate the count). Best-effort: the
+    // table may not exist on older deployments.
     let onboardedWallets = 0;
     try {
-      const { count: wc } = await supabase
-        .from("user_wallets")
-        .select("*", { count: "exact", head: true });
-      onboardedWallets = wc ?? 0;
+      const { data: wallets } = await supabase.from("user_wallets").select("address");
+      const owned = new Set((wallets ?? []).map((w) => (w.address as string)?.toLowerCase()));
+      const paid = new Set<string>();
+      for (const addr of payerSet) {
+        if (typeof addr === "string" && owned.has(addr.toLowerCase())) paid.add(addr.toLowerCase());
+      }
+      onboardedWallets = paid.size;
     } catch {
       // ignore — optional feature
     }
