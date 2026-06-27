@@ -20,23 +20,31 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-
-const ADMIN_EMAIL = "admin@example.com";
-const ADMIN_PASSWORD = "123456";
+import {
+  ADMIN_SESSION_COOKIE,
+  adminLoginCredentials,
+  adminSessionToken,
+  isAdminConfigured,
+} from "@/lib/admin-auth";
 
 export async function login(formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  const admin = adminLoginCredentials();
 
-  if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
+  if (!isAdminConfigured()) {
+    return { error: "Admin dashboard is not configured" };
+  }
+
+  if (email !== admin.email || password !== admin.password) {
     return { error: "Invalid credentials" };
   }
 
   const cookieStore = await cookies();
-  cookieStore.set("session", "authenticated", {
+  cookieStore.set(ADMIN_SESSION_COOKIE, adminSessionToken(), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "strict",
     path: "/",
     maxAge: 60 * 60 * 24, // 1 day
   });
@@ -46,6 +54,7 @@ export async function login(formData: FormData) {
 
 export async function logout() {
   const cookieStore = await cookies();
+  cookieStore.delete(ADMIN_SESSION_COOKIE);
   cookieStore.delete("session");
   redirect("/");
 }

@@ -16,8 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
+import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
 
 const GATEWAY_API = "https://gateway-api-testnet.circle.com/v1/balances";
 const ARC_TESTNET_DOMAIN = 26;
@@ -43,7 +44,11 @@ async function getWalletUsdcBalance(address: `0x${string}`): Promise<string> {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const address = process.env.SELLER_ADDRESS;
   if (!address) {
     return NextResponse.json(

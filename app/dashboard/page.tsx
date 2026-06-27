@@ -52,6 +52,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { shortenHash } from "@/lib/utils";
+import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
 import { usePaymentEvents } from "@/hooks/use-transactions";
 import { useWithdrawals } from "@/hooks/use-withdrawals";
 
@@ -298,7 +299,7 @@ export default function Dashboard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Transaction</TableHead>
+                  <TableHead>Gateway settlement</TableHead>
                   <TableHead>Payer</TableHead>
                   <TableHead>Endpoint</TableHead>
                   <TableHead className="text-right">
@@ -350,12 +351,8 @@ export default function Dashboard() {
                         {ev.gateway_tx ? (
                           <CopyableCell
                             value={ev.gateway_tx}
-                            label={shortenHash(ev.gateway_tx, 6)}
-                            href={
-                              ev.gateway_tx.startsWith("0x")
-                                ? `${EXPLORER_BASE}/tx/${ev.gateway_tx}`
-                                : undefined
-                            }
+                            label={shortSettlementId(ev.gateway_tx, 6)}
+                            href={settlementExplorerUrl(ev.gateway_tx) ?? undefined}
                           />
                         ) : (
                           <span className="text-muted-foreground">—</span>

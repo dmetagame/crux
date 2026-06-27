@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import TopoBackground from "@/components/topo-background";
+import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
 
 // --- Types (mirror the streaming API; kept local to the client) ---
 type AgentEvent =
@@ -610,19 +611,32 @@ function RecentSettlementFeed({ stats }: { stats: Stats | null }) {
   if (!recent.length) return null;
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
-      <span className="uppercase tracking-wide text-zinc-600">Latest Arc settlements</span>
-      {recent.map((p, i) => (
-        <a
-          key={`${p.tx}-${i}`}
-          href={arcscanTx(p.tx!)}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded border border-zinc-800 bg-zinc-950/45 px-2 py-1 tabular-nums text-zinc-400 hover:border-teal-500/60 hover:text-teal-300"
-          title={`${p.endpoint} at ${new Date(p.at).toLocaleString()}`}
-        >
-          ${p.amount.toFixed(4)} · {p.tx!.slice(0, 8)}...
-        </a>
-      ))}
+      <span className="uppercase tracking-wide text-zinc-600">Latest Gateway settlements</span>
+      {recent.map((p, i) => {
+        const href = settlementExplorerUrl(p.tx!);
+        const label = href
+          ? `Arc tx ${shortSettlementId(p.tx!, 8)}`
+          : `Gateway ${shortSettlementId(p.tx!, 8)}`;
+        const title = `${p.endpoint} at ${new Date(p.at).toLocaleString()}`;
+        const className =
+          "rounded border border-zinc-800 bg-zinc-950/45 px-2 py-1 tabular-nums text-zinc-400";
+        return href ? (
+          <a
+            key={`${p.tx}-${i}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className={`${className} hover:border-teal-500/60 hover:text-teal-300`}
+            title={title}
+          >
+            ${p.amount.toFixed(4)} · {label}
+          </a>
+        ) : (
+          <span key={`${p.tx}-${i}`} className={className} title={`${title} · ${p.tx}`}>
+            ${p.amount.toFixed(4)} · {label}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -731,22 +745,33 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
         <span className="text-amber-400">· paid, no usable data</span>
       )}
       {ev.tx && (
-        <a
-          href={arcscanTx(ev.tx)}
-          target="_blank"
-          rel="noreferrer"
-          className="ml-1 text-zinc-500 underline decoration-zinc-700 underline-offset-2 hover:text-teal-300 hover:decoration-teal-500"
-        >
-          · Arc tx {ev.tx.slice(0, 8)}
-        </a>
+        <SettlementReference tx={ev.tx} className="ml-1 text-zinc-500" />
       )}
       {ev.rationale && <div className="mt-0.5 text-zinc-400">“{ev.rationale}”</div>}
     </div>
   );
 }
 
-function arcscanTx(tx: string) {
-  return `https://testnet.arcscan.app/tx/${tx}`;
+function SettlementReference({ tx, className }: { tx: string; className?: string }) {
+  const href = settlementExplorerUrl(tx);
+  const label = href ? `Arc tx ${shortSettlementId(tx, 8)}` : `Gateway settlement ${shortSettlementId(tx, 8)}`;
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={`${className ?? ""} underline decoration-zinc-700 underline-offset-2 hover:text-teal-300 hover:decoration-teal-500`}
+      >
+        · {label}
+      </a>
+    );
+  }
+  return (
+    <span className={className} title={`Circle Gateway settlement id: ${tx}`}>
+      · {label}
+    </span>
+  );
 }
 
 function ResultPanel({ done, heading = "Brief" }: { done?: Done; heading?: string }) {

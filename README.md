@@ -55,7 +55,7 @@ is judgment a rule can't replicate.
 
 Every completed web run can persist a public receipt at `/runs/<id>`: the budget,
 source previews, purchases, skips, rationales, final brief, benchmark score when
-available, and Arcscan links for every settlement. This is the async judging
+available, and Gateway settlement ids for every paid source. This is the async judging
 artifact: a reviewer does not have to trust the live UI or the README; they can
 open a single run and inspect what the agent decided and what actually settled.
 
@@ -81,7 +81,8 @@ open a single run and inspect what the agent decided and what actually settled.
   varied price/quality/reliability, free previews, the trap, and a misleading
   rumor. Reliability is deterministic under a seed, so runs are reproducible.
 - **Settlement** (`lib/x402.ts`): x402 + Circle Gateway batching on Arc. Each
-  `purchase` is a real `gateway.pay()` that settles on-chain.
+  `purchase` is a real `gateway.pay()` authorization that is settled through
+  Circle Gateway.
 - **Scorer** (`lib/score.ts`): grades a brief by weighted ground-truth facts
   captured, and flags whether it ingested the false rumor.
 - **Baselines** (`lib/baseline.ts`): non-LLM buy-cheapest / buy-by-quality buyers

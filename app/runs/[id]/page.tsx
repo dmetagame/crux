@@ -6,6 +6,7 @@ import TopoBackground from "@/components/topo-background";
 import { SOURCES } from "@/lib/marketplace";
 import { REAL_SOURCES } from "@/lib/real-sources";
 import { getRunReceipt } from "@/lib/run-receipts";
+import { settlementExplorerUrl, shortSettlementId } from "@/lib/settlement";
 
 type ReceiptPageProps = {
   params: Promise<{ id: string }>;
@@ -81,7 +82,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Verifiable Crux artifact for <span className="text-zinc-200">{receipt.subject}</span>: budget, source
-              decisions, final brief, and Arc settlement links.
+              decisions, final brief, and Gateway settlement proof.
             </p>
           </div>
           <div className="text-right text-xs text-zinc-500">
@@ -169,14 +170,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
                       <td className="px-4 py-3 text-zinc-400">
                         {buy?.rationale && <div>{buy.rationale}</div>}
                         {buy?.tx && (
-                          <a
-                            href={arcscanTx(buy.tx)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-1 inline-block text-xs text-teal-300 underline decoration-teal-900 underline-offset-2"
-                          >
-                            Arc tx {buy.tx.slice(0, 10)}...
-                          </a>
+                          <SettlementReference tx={buy.tx} />
                         )}
                         {!buy && inspected && <span className="text-xs text-zinc-600">Agent inspected the free preview and declined to spend.</span>}
                       </td>
@@ -198,7 +192,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             <div className="space-y-2 text-sm text-zinc-400">
               <ProofLine label="Previews" value={String(previews.size)} />
               <ProofLine label="Purchases" value={String(ledger.length)} />
-              <ProofLine label="Arc txs" value={String(ledger.filter((l) => l.tx).length)} />
+              <ProofLine label="Settlements" value={String(ledger.filter((l) => l.tx).length)} />
               <ProofLine label="Tokens" value={String(result?.tokens ?? "unknown")} />
             </div>
             {citations.length > 0 && (
@@ -271,8 +265,26 @@ function money(value: number | null) {
   return `$${value.toFixed(value < 0.01 ? 4 : 3)}`;
 }
 
-function arcscanTx(tx: string) {
-  return `https://testnet.arcscan.app/tx/${tx}`;
+function SettlementReference({ tx }: { tx: string }) {
+  const href = settlementExplorerUrl(tx);
+  const label = href ? `Arc tx ${shortSettlementId(tx, 10)}` : `Gateway settlement ${shortSettlementId(tx, 10)}`;
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 inline-block text-xs text-teal-300 underline decoration-teal-900 underline-offset-2"
+      >
+        {label}
+      </a>
+    );
+  }
+  return (
+    <span className="mt-1 inline-block text-xs text-teal-300" title={`Circle Gateway settlement id: ${tx}`}>
+      {label}
+    </span>
+  );
 }
 
 function asRecord(value: unknown): Record<string, any> | null {

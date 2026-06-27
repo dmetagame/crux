@@ -6,7 +6,7 @@ export const maxDuration = 15;
 /**
  * Live traction counter. Aggregates the payment_events table that withGateway
  * writes on every settlement — total autonomous payments, total test-USDC moved,
- * average (sub-cent) transaction size, distinct payers, and the latest few txs.
+ * average (sub-cent) transaction size, distinct payers, and the latest payments.
  * This is the RFB-01 traction metric, read straight from on-chain settlements.
  */
 export async function GET() {

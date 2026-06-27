@@ -1,7 +1,7 @@
 -- Public, shareable proof artifacts for completed Crux agent runs.
 --
 -- A receipt captures the agent's budget, source decisions, final brief, score
--- when available, and Arc settlement references. These pages are intentionally
+-- when available, and Gateway settlement references. These pages are intentionally
 -- public: they are the async judging and traction artifact.
 
 create table if not exists public.run_receipts (

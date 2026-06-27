@@ -10,8 +10,8 @@ export const maxDuration = 60;
  *   {type:"done", result, score}                              — final brief + score
  *   {type:"error", message}
  *
- * The agent pays REAL USDC (Arc testnet) for each purchase; purchases settle and
- * carry an on-chain tx the UI links to the explorer.
+ * The agent pays REAL USDC (Arc testnet) for each purchase; purchases settle
+ * through Circle Gateway and carry settlement ids for the receipt.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
