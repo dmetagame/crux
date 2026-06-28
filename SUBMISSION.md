@@ -28,6 +28,12 @@ Completed runs also produce a public receipt URL (`/runs/<id>`) with the source 
 purchase rationales, final brief, benchmark score when available, and Arcscan settlement links.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
+## Golden receipts
+- Public-company spend decision, Coinbase: https://crux-khaki.vercel.app/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c
+- Private-company spend decision, OpenAI: https://crux-khaki.vercel.app/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c
+- Scored benchmark, Northwind Logistics: https://crux-khaki.vercel.app/runs/9859fecb-488b-478d-a5bc-fec3899d9229
+- Agent-vs-baselines comparison: https://crux-khaki.vercel.app/runs/512afc48-1a8f-410d-89a4-64e63303b0f5
+
 ## Agent-access story
 Crux is not only a website. Other agents can discover and use it through:
 

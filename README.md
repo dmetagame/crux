@@ -59,6 +59,13 @@ available, and Gateway settlement ids for every paid source. This is the async j
 artifact: a reviewer does not have to trust the live UI or the README; they can
 open a single run and inspect what the agent decided and what actually settled.
 
+Golden examples:
+
+- Coinbase public-company run: https://crux-khaki.vercel.app/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c
+- OpenAI private-company run: https://crux-khaki.vercel.app/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c
+- Northwind scored benchmark: https://crux-khaki.vercel.app/runs/9859fecb-488b-478d-a5bc-fec3899d9229
+- Agent-vs-baselines comparison: https://crux-khaki.vercel.app/runs/512afc48-1a8f-410d-89a4-64e63303b0f5
+
 ## External-agent integration
 
 Crux is discoverable by other agents:

@@ -106,6 +106,32 @@ const OPERATOR_LOGIN_HREF = "/admin/login?next=%2Fagent%3Fmode%3Doperator";
 // judgement call.
 const PUBLIC_EXAMPLES = ["Nvidia", "Coinbase", "Palantir"];
 const PRIVATE_EXAMPLES = ["OpenAI", "Anthropic", "Stripe"];
+const FEATURED_RECEIPTS = [
+  {
+    label: "Public company",
+    title: "Coinbase buys SEC filings",
+    href: "/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c",
+    meta: "$0.012 spent · Wikipedia + EDGAR",
+  },
+  {
+    label: "Private company",
+    title: "OpenAI skips EDGAR spend",
+    href: "/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c",
+    meta: "$0.005 spent · news + Wikipedia",
+  },
+  {
+    label: "Scored benchmark",
+    title: "Northwind agent run",
+    href: "/runs/9859fecb-488b-478d-a5bc-fec3899d9229",
+    meta: "100% coverage · no false claim",
+  },
+  {
+    label: "Comparison",
+    title: "Agent beats baselines",
+    href: "/runs/512afc48-1a8f-410d-89a4-64e63303b0f5",
+    meta: "100% vs 55% · baselines swallow rumor",
+  },
+];
 
 async function streamNDJSON(
   url: string,
@@ -499,6 +525,7 @@ function AgentPageContent() {
         )}
 
         <JudgeProofPanel />
+        <FeaturedReceipts />
         <RoleWorkspacePanel
           role={role}
           setRole={setRole}
@@ -795,6 +822,35 @@ function JudgeProofPanel() {
           <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.text}</p>
         </div>
       ))}
+    </section>
+  );
+}
+
+function FeaturedReceipts() {
+  return (
+    <section className="mt-5">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Featured proof receipts</h2>
+        <span className="text-[11px] text-zinc-600">Durable artifacts from live Arc testnet runs</span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-4">
+        {FEATURED_RECEIPTS.map((receipt) => (
+          <a
+            key={receipt.href}
+            href={receipt.href}
+            className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3 backdrop-blur-sm hover:border-teal-500/60"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-teal-300">
+                {receipt.label}
+              </span>
+              <ExternalLink className="h-3.5 w-3.5 text-zinc-600" aria-hidden="true" />
+            </div>
+            <div className="mt-2 text-sm font-semibold text-zinc-100">{receipt.title}</div>
+            <div className="mt-1 text-xs leading-relaxed text-zinc-500">{receipt.meta}</div>
+          </a>
+        ))}
+      </div>
     </section>
   );
 }
