@@ -10,17 +10,24 @@ type AlertPayload = {
   dedupeMs?: number;
 };
 
+export type AlertDeliveryResult = {
+  destination: number;
+  ok: boolean;
+  status: number | null;
+  error?: string;
+};
+
 const DEFAULT_DEDUPE_MS = 5 * 60 * 1000;
 const sentAtByKey = new Map<string, number>();
 
-export async function sendOperationalAlert(payload: AlertPayload) {
+export async function sendOperationalAlert(payload: AlertPayload): Promise<AlertDeliveryResult[]> {
   const webhookUrls = alertWebhookUrls();
-  if (webhookUrls.length === 0) return;
+  if (webhookUrls.length === 0) return [];
 
   const dedupeKey = payload.dedupeKey ?? `${payload.event}:${payload.summary}`;
   const now = Date.now();
   const lastSentAt = sentAtByKey.get(dedupeKey) ?? 0;
-  if (now - lastSentAt < (payload.dedupeMs ?? DEFAULT_DEDUPE_MS)) return;
+  if (now - lastSentAt < (payload.dedupeMs ?? DEFAULT_DEDUPE_MS)) return [];
   sentAtByKey.set(dedupeKey, now);
 
   const env = process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown";
@@ -35,7 +42,11 @@ export async function sendOperationalAlert(payload: AlertPayload) {
     timestamp: new Date().toISOString(),
   };
 
-  await Promise.all(webhookUrls.map((webhookUrl) => postAlert(webhookUrl, body)));
+  return Promise.all(
+    webhookUrls.map((webhookUrl, index) =>
+      postAlert(webhookUrl, body, index + 1),
+    ),
+  );
 }
 
 export function alertErrorMessage(err: unknown) {
@@ -49,7 +60,11 @@ function alertWebhookUrls() {
     .filter(Boolean);
 }
 
-async function postAlert(webhookUrl: string, body: Record<string, unknown>) {
+async function postAlert(
+  webhookUrl: string,
+  body: Record<string, unknown>,
+  destination: number,
+): Promise<AlertDeliveryResult> {
   try {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -67,8 +82,20 @@ async function postAlert(webhookUrl: string, body: Record<string, unknown>) {
     if (!res.ok) {
       console.warn("[alert] webhook failed:", res.status, await safeText(res));
     }
+    return {
+      destination,
+      ok: res.ok,
+      status: res.status,
+    };
   } catch (err) {
-    console.warn("[alert] webhook error:", (err as Error).message);
+    const message = alertErrorMessage(err);
+    console.warn("[alert] webhook error:", message);
+    return {
+      destination,
+      ok: false,
+      status: null,
+      error: message,
+    };
   }
 }
 

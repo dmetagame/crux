@@ -44,6 +44,13 @@ agent, rate-limit, or receipt behavior:
 npx vercel@latest env ls --scope dmetagames-projects | grep CRUX_ALERT_WEBHOOK_URL
 ```
 
+If alert destinations were added or rotated, set a short-lived
+`CRUX_MAINTENANCE_TOKEN`, redeploy, then verify delivery:
+
+```bash
+CRUX_MAINTENANCE_TOKEN=... npm run alerts:test
+```
+
 Run the smoke check:
 
 ```bash

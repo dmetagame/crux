@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-import { safeEqualHex, sha256Hex } from "@/lib/access-crypto";
+import { isMaintenanceAuthorized } from "@/lib/maintenance-auth";
 import { encryptUserWalletRows } from "@/lib/wallet-backfill";
 import { hasWalletEncryptionKey } from "@/lib/wallet-encryption";
 
@@ -12,7 +12,7 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!isMaintenanceAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -44,17 +44,4 @@ export async function POST(req: NextRequest) {
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
-}
-
-function isAuthorized(req: NextRequest) {
-  const expected = process.env.CRUX_MAINTENANCE_TOKEN?.trim();
-  if (!expected) return false;
-
-  const supplied =
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ||
-    req.headers.get("x-crux-maintenance-token")?.trim() ||
-    "";
-  if (!supplied) return false;
-
-  return safeEqualHex(sha256Hex(supplied), sha256Hex(expected));
 }

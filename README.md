@@ -180,6 +180,10 @@ agent topics, and public agent budget guard. Override the target with
   `Authorization: Bearer ...` header to every configured destination.
 - Alerts are best-effort, time-bounded, deduped in-process, and redact private
   keys, bearer tokens, JWT-like tokens, and raw payment payloads.
+- To test alert delivery without causing a fake production error, temporarily
+  set `CRUX_MAINTENANCE_TOKEN`, redeploy, then run
+  `CRUX_MAINTENANCE_TOKEN=... npm run alerts:test`. Remove or rotate the token
+  after the test if it was created only for maintenance.
 
 ### Commands
 ```bash
@@ -190,6 +194,7 @@ npm run external-demo       # pay a REAL external x402 service on Base (via the 
 npm run check:migrations    # verify Supabase migration naming/order
 npm run verify:migrations   # apply all migrations to disposable Postgres
 npm run verify:production   # smoke-check the deployed production app
+npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
