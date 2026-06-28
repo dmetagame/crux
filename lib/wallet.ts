@@ -14,6 +14,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { randomToken, safeEqualHex, sha256Hex } from "@/lib/access-crypto";
+import {
+  decryptWalletPrivateKey,
+  encryptWalletPrivateKey,
+  hasWalletEncryptionKey,
+  isEncryptedWalletPrivateKey,
+  shouldRequireEncryptedWallets,
+  walletEncryptionVersion,
+} from "@/lib/wallet-encryption";
+import type { HexPrivateKey } from "@/lib/wallet-keys";
 
 function admin() {
   return createClient(
@@ -61,23 +70,30 @@ export async function createUserWallet(email: string | null): Promise<NewWallet>
   const privateKey = generatePrivateKey();
   const address = privateKeyToAccount(privateKey).address;
   const walletToken = randomToken();
+  const keyColumns = walletKeyColumns(privateKey);
 
   let { data, error } = await admin()
     .from("user_wallets")
     .insert({
       email: normalizedEmail,
       address,
-      private_key: privateKey,
+      ...keyColumns,
       wallet_token_hash: sha256Hex(walletToken),
       wallet_token_created_at: new Date().toISOString(),
     })
     .select("id, address")
     .single();
 
+  if (error && isEncryptedWalletColumnError(error.message)) {
+    throw new Error(
+      "Could not create encrypted wallet: apply the wallet encryption migration first.",
+    );
+  }
+
   if (error && /wallet_token_hash|wallet_token_created_at/i.test(error.message)) {
     const fallback = await admin()
       .from("user_wallets")
-      .insert({ email: normalizedEmail, address, private_key: privateKey })
+      .insert({ email: normalizedEmail, address, ...keyColumns })
       .select("id, address")
       .single();
     data = fallback.data;
@@ -103,13 +119,13 @@ export async function getWalletKey(
 ): Promise<{ key: `0x${string}`; address: string } | null> {
   const tokenQuery = await admin()
     .from("user_wallets")
-    .select("address, private_key, wallet_token_hash")
+    .select("address, private_key, private_key_ciphertext, wallet_token_hash")
     .eq("id", walletId)
     .single();
   let data: any | null = tokenQuery.data;
   let error = tokenQuery.error;
 
-  if (error && /wallet_token_hash/i.test(error.message)) {
+  if (error && /wallet_token_hash|private_key_ciphertext/i.test(error.message)) {
     const fallback = await admin()
       .from("user_wallets")
       .select("address, private_key")
@@ -125,7 +141,7 @@ export async function getWalletKey(
     const supplied = walletToken?.trim();
     if (!supplied || !safeEqualHex(tokenHash, sha256Hex(supplied))) return null;
   }
-  return { key: data.private_key as `0x${string}`, address: data.address as string };
+  return { key: resolveStoredWalletKey(data), address: data.address as string };
 }
 
 /** Count of onboarded wallets — an honest, non-gameable traction signal. */
@@ -151,4 +167,45 @@ async function issueWalletToken(walletId: string) {
   }
 
   return walletToken;
+}
+
+function walletKeyColumns(privateKey: HexPrivateKey) {
+  if (!hasWalletEncryptionKey()) {
+    return { private_key: privateKey };
+  }
+
+  return {
+    private_key: null,
+    private_key_ciphertext: encryptWalletPrivateKey(privateKey),
+    private_key_encryption_version: walletEncryptionVersion(),
+    private_key_encrypted_at: new Date().toISOString(),
+  };
+}
+
+function resolveStoredWalletKey(data: {
+  private_key?: string | null;
+  private_key_ciphertext?: string | null;
+}): HexPrivateKey {
+  if (data.private_key_ciphertext) {
+    return decryptWalletPrivateKey(data.private_key_ciphertext);
+  }
+
+  const plaintext = data.private_key;
+  if (!plaintext) {
+    throw new Error("Wallet key material is missing.");
+  }
+
+  if (isEncryptedWalletPrivateKey(plaintext)) {
+    return decryptWalletPrivateKey(plaintext);
+  }
+
+  if (shouldRequireEncryptedWallets()) {
+    throw new Error("Wallet key has not been encrypted yet.");
+  }
+
+  return plaintext as HexPrivateKey;
+}
+
+function isEncryptedWalletColumnError(message: string) {
+  return /private_key_ciphertext|private_key_encryption_version|private_key_encrypted_at/i.test(message);
 }

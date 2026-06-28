@@ -136,6 +136,7 @@ CRUX_SELLER_TESTNET_ADDRESS=...
 CRUX_SELLER_TESTNET_PRIVATE_KEY=...
 CRUX_HOUSE_TESTNET_ADDRESS=...
 CRUX_HOUSE_TESTNET_PRIVATE_KEY=...
+CRUX_WALLET_ENCRYPTION_KEY=...          # generate with npm run wallets:keygen
 ```
 The older `SELLER_*` and `BUYER_*` names are still accepted as aliases for
 existing deployments. New setups should use the `CRUX_*_TESTNET_*` names so
@@ -155,6 +156,13 @@ agent topics, and public agent budget guard. Override the target with
   small and rotate it independently from the seller wallet.
 - `CRUX_KEY_SCOPE` must stay `arc-testnet`, `testnet`, or `demo`; the app refuses
   to use private keys when this scope is changed to a production-like value.
+- Visitor-wallet private keys are encrypted before storage when
+  `CRUX_WALLET_ENCRYPTION_KEY` is set. For existing plaintext rows, apply the
+  `20260310000009_encrypt_user_wallet_keys.sql` migration, set the env key,
+  then run `npm run wallets:encrypt -- --dry-run` followed by
+  `npm run wallets:encrypt`.
+- After all visitor-wallet rows are encrypted, set
+  `CRUX_WALLET_REQUIRE_ENCRYPTED_WALLETS=true` to refuse legacy plaintext rows.
 - To rotate a wallet, generate a fresh keypair, fund/deposit the new address,
   update both the address and private-key env vars together, redeploy, and run
   `npm run verify:production`. Do not reuse hackathon demo keys for mainnet.
@@ -166,6 +174,8 @@ npm run research-agent      # run the autonomous agent (brief + spend ledger + s
 npm run compare             # the money-shot: agent vs. baselines, side-by-side
 npm run external-demo       # pay a REAL external x402 service on Base (via the Bazaar)
 npm run verify:production   # smoke-check the deployed production app
+npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
+npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
 Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
 
