@@ -23,6 +23,7 @@ import {
   GATEWAY_DOMAINS,
 } from "@circle-fin/x402-batching/client";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ADMIN_SESSION_COOKIE,
   isAdminSession,
@@ -40,10 +41,17 @@ const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
   polygonAmoy: "Polygon Amoy",
 };
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseClient) {
+    supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+  }
+  return supabaseClient;
+}
 
 export async function POST(req: NextRequest) {
   if (!(await isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value))) {
@@ -148,6 +156,8 @@ export async function POST(req: NextRequest) {
       );
     }
   }
+
+  const supabase = getSupabase();
 
   // Insert a pending withdrawal record
   const { data: withdrawal, error: insertError } = await supabase

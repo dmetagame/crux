@@ -17,7 +17,11 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isAdminSession,
+  safeAdminRedirectPath,
+} from "@/lib/admin-auth";
 
 export async function proxy(request: NextRequest) {
   const session = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
@@ -30,7 +34,10 @@ export async function proxy(request: NextRequest) {
 
   // Logged-in user trying to access sign-in page -> redirect to dashboard.
   if (pathname === "/admin/login" && authed) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const next = request.nextUrl.searchParams.get("next") ?? "";
+    return NextResponse.redirect(
+      new URL(safeAdminRedirectPath(next), request.url),
+    );
   }
 
   if (pathname.startsWith("/api/gateway/") && !authed) {

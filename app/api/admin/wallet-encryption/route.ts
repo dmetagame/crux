@@ -6,11 +6,6 @@ import { hasWalletEncryptionKey } from "@/lib/wallet-encryption";
 
 export const maxDuration = 60;
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
-
 export async function POST(req: NextRequest) {
   if (!isMaintenanceAuthorized(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,6 +26,10 @@ export async function POST(req: NextRequest) {
       : undefined;
 
   try {
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
     const result = await encryptUserWalletRows(supabase, {
       dryRun,
       maxRows,

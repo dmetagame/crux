@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { login, type LoginState } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +12,12 @@ const initialState: LoginState = {};
 
 export function AdminLoginForm() {
   const [state, formAction, pending] = useActionState(login, initialState);
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("next") ?? "/dashboard";
 
   return (
     <form action={formAction} className="space-y-4">
+      <input type="hidden" name="redirectTo" value={redirectTo} />
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input

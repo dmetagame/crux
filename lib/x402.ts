@@ -18,6 +18,7 @@
 
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
@@ -31,10 +32,17 @@ const ARC_TESTNET_GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 
 const facilitator = new BatchFacilitatorClient();
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseClient) {
+    supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    );
+  }
+  return supabaseClient;
+}
 
 interface PaymentPayload {
   x402Version: number;
@@ -233,6 +241,7 @@ export function withGateway(
         raw: { requirements, settleResult, settlementProof },
       };
 
+      const supabase = getSupabase();
       let { error } = await supabase.from("payment_events").insert(event);
 
       if (error && isSettlementProofColumnError(error.message)) {

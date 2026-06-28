@@ -1,4 +1,5 @@
 import { safeEqualHex, sha256Hex } from "@/lib/access-crypto";
+import { adminSessionFromCookieHeader, isAdminSession } from "@/lib/admin-auth";
 import {
   acquireRunLock,
   budgetCostUnits,
@@ -23,7 +24,7 @@ type AgentKeyConfig = {
 
 type GuardSuccess = {
   ok: true;
-  actorKind: "public" | "api-key" | "visitor-wallet";
+  actorKind: "public" | "api-key" | "admin" | "visitor-wallet";
   actorId: string;
   release: () => Promise<void>;
 };
@@ -34,6 +35,12 @@ type GuardFailure = {
   message: string;
   headers?: Record<string, string>;
 };
+
+type HouseWalletActor =
+  | { ok: true; actorKind: "public"; actorId: string }
+  | { ok: true; actorKind: "admin"; actorId: string }
+  | { ok: true; actorKind: "api-key"; actorId: string; config: AgentKeyConfig }
+  | GuardFailure;
 
 export type AgentRunGuard = GuardSuccess | GuardFailure;
 
@@ -163,7 +170,7 @@ async function guardHouseWalletRun(
     publicMaxBudgetUsdc: number;
   },
 ): Promise<AgentRunGuard> {
-  const auth = authenticateAgentKey(req, opts.scope);
+  const auth = await authenticateHouseWalletActor(req, opts.scope);
   if (!auth.ok) return auth;
 
   if (auth.actorKind === "public" && !envBool("CRUX_PUBLIC_AGENT_RUNS_ENABLED", true)) {
@@ -174,6 +181,8 @@ async function guardHouseWalletRun(
   const actorMax =
     auth.actorKind === "api-key"
       ? auth.config.maxBudgetUsdc ?? envFloat("CRUX_AGENT_KEY_MAX_BUDGET_USDC", 0.1)
+      : auth.actorKind === "admin"
+        ? envFloat("CRUX_ADMIN_AGENT_MAX_BUDGET_USDC", 0.1)
       : opts.publicMaxBudgetUsdc;
   const maxBudget = Math.min(hardMax, actorMax);
   if (opts.budgetUsdc > maxBudget) {
@@ -187,6 +196,8 @@ async function guardHouseWalletRun(
   const hourlyLimit =
     auth.actorKind === "api-key"
       ? auth.config.hourlyLimit ?? envInt("CRUX_AGENT_KEY_HOURLY_LIMIT", 20)
+      : auth.actorKind === "admin"
+        ? envInt("CRUX_ADMIN_AGENT_HOURLY_LIMIT", 60)
       : envInt("CRUX_PUBLIC_AGENT_HOURLY_LIMIT", 2);
   const hourly = await consumeRateLimit({
     key: limitKey(`${opts.scope}:hour`, auth.actorId),
@@ -206,6 +217,8 @@ async function guardHouseWalletRun(
   const dailyBudgetUsdc =
     auth.actorKind === "api-key"
       ? auth.config.dailyBudgetUsdc ?? envFloat("CRUX_AGENT_KEY_DAILY_BUDGET_USDC", 1)
+      : auth.actorKind === "admin"
+        ? envFloat("CRUX_ADMIN_AGENT_DAILY_BUDGET_USDC", 5)
       : envFloat("CRUX_PUBLIC_AGENT_DAILY_BUDGET_USDC", 0.1);
   const actorBudget = await consumeRateLimit({
     key: limitKey(`${opts.scope}:budget`, auth.actorId),
@@ -264,15 +277,15 @@ async function guardHouseWalletRun(
   };
 }
 
-function authenticateAgentKey(
+async function authenticateHouseWalletActor(
   req: Request,
   scope: AgentScope,
-):
-  | { ok: true; actorKind: "public"; actorId: string }
-  | { ok: true; actorKind: "api-key"; actorId: string; config: AgentKeyConfig }
-  | GuardFailure {
+): Promise<HouseWalletActor> {
   const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
   if (!bearer) {
+    if (await isAdminSession(adminSessionFromCookieHeader(req.headers.get("cookie")))) {
+      return { ok: true, actorKind: "admin", actorId: "admin:session" };
+    }
     return { ok: true, actorKind: "public", actorId: `public:${clientIp(req)}` };
   }
 

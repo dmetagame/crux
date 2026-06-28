@@ -28,6 +28,7 @@ import {
   isAdminLogin,
   isAdminConfigured,
   normalizeEmail,
+  safeAdminRedirectPath,
 } from "@/lib/admin-auth";
 import {
   clientIpFromHeaders,
@@ -45,6 +46,9 @@ export async function login(
 ): Promise<LoginState> {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
+  const redirectTo = safeAdminRedirectPath(
+    String(formData.get("redirectTo") ?? ""),
+  );
 
   if (!isAdminConfigured()) {
     return { error: "Admin dashboard is not configured" };
@@ -100,7 +104,7 @@ export async function login(
     adminSessionCookieOptions(),
   );
 
-  redirect("/dashboard");
+  redirect(redirectTo);
 }
 
 export async function logout() {

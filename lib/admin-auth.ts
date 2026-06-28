@@ -103,6 +103,35 @@ export function isSameOriginAdminMutation(req: NextRequest) {
   return origin === new URL(req.url).origin;
 }
 
+export function adminSessionFromCookieHeader(header: string | null | undefined) {
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index === -1) continue;
+    const name = part.slice(0, index).trim();
+    if (name !== ADMIN_SESSION_COOKIE) continue;
+    const value = part.slice(index + 1).trim();
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function safeAdminRedirectPath(value: string) {
+  const trimmed = value.trim();
+  if (
+    trimmed.startsWith("/") &&
+    !trimmed.startsWith("//") &&
+    !trimmed.includes("\\")
+  ) {
+    return trimmed;
+  }
+  return "/dashboard";
+}
+
 export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
