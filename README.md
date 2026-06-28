@@ -176,11 +176,16 @@ npm run dev                 # start the seller (marketplace + x402 endpoints)
 npm run research-agent      # run the autonomous agent (brief + spend ledger + score)
 npm run compare             # the money-shot: agent vs. baselines, side-by-side
 npm run external-demo       # pay a REAL external x402 service on Base (via the Bazaar)
+npm run check:migrations    # verify Supabase migration naming/order
+npm run verify:migrations   # apply all migrations to disposable Postgres
 npm run verify:production   # smoke-check the deployed production app
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
 Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
+
+For production deploys, use [RELEASE.md](./RELEASE.md) so Vercel deploys,
+Supabase migrations, smoke checks, and short-lived secrets are tracked together.
 
 ## Tech & Circle products used
 

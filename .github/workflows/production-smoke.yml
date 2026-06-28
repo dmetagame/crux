@@ -1,0 +1,45 @@
+name: Production Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Production base URL to verify
+        required: false
+        default: https://crux-khaki.vercel.app
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Verify Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DEFAULT_BASE_URL: https://crux-khaki.vercel.app
+      INPUT_BASE_URL: ${{ inputs.base_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Allow Vercel promotion to settle
+        if: github.event_name == 'push'
+        run: sleep 90
+
+      - name: Run production smoke checks
+        env:
+          CRUX_VERIFY_BASE_URL: ${{ env.INPUT_BASE_URL || env.DEFAULT_BASE_URL }}
+        run: npm run verify:production

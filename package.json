@@ -16,6 +16,8 @@
     "compare": "node --experimental-transform-types --no-warnings --env-file=.env.local compare.mts",
     "external-demo": "node --experimental-transform-types --no-warnings --env-file=.env.local external-x402.mts",
     "refresh-tickers": "node --experimental-transform-types --no-warnings scripts/refresh-tickers.mts",
+    "check:migrations": "node --experimental-transform-types --no-warnings scripts/check-migrations.mts",
+    "verify:migrations": "bash scripts/verify-migrations.sh",
     "verify:production": "node --experimental-transform-types --no-warnings scripts/verify-production.mts",
     "wallets:keygen": "node --experimental-transform-types --no-warnings scripts/generate-wallet-encryption-key.mts",
     "wallets:encrypt": "node --experimental-transform-types --no-warnings --env-file=.env.local scripts/encrypt-user-wallets.mts"
