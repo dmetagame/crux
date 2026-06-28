@@ -4,7 +4,7 @@ import {
   classifySettlementReference,
   type SettlementKind,
   type SettlementStatus,
-} from "@/lib/settlement";
+} from "./settlement.ts";
 
 const ARC_TESTNET_RPC =
   process.env.ARC_TESTNET_RPC_URL ??

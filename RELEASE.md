@@ -51,6 +51,13 @@ If alert destinations were added or rotated, set a short-lived
 CRUX_MAINTENANCE_TOKEN=... npm run alerts:test
 ```
 
+For payment/settlement changes, run a dry reconciliation before deploy when
+production Supabase env vars are loaded:
+
+```bash
+npm run reconcile:payments -- --dry-run
+```
+
 Run the smoke check:
 
 ```bash

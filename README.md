@@ -184,6 +184,13 @@ agent topics, and public agent budget guard. Override the target with
   set `CRUX_MAINTENANCE_TOKEN`, redeploy, then run
   `CRUX_MAINTENANCE_TOKEN=... npm run alerts:test`. Remove or rotate the token
   after the test if it was created only for maintenance.
+- Payment reconciliation runs every 30 minutes through Vercel Cron at
+  `/api/admin/reconcile-payments`. It scans recent `payment_events`, refreshes
+  stale settlement proof columns, re-verifies Arc transaction hashes, and alerts
+  if settlement records are missing, stale, failed, or inconsistent.
+- Manual reconciliation can run locally with Supabase env vars loaded:
+  `npm run reconcile:payments -- --dry-run`, or against the deployed route with
+  `Authorization: Bearer $CRON_SECRET` if `CRON_SECRET` is configured.
 
 ### Commands
 ```bash
@@ -194,6 +201,7 @@ npm run external-demo       # pay a REAL external x402 service on Base (via the 
 npm run check:migrations    # verify Supabase migration naming/order
 npm run verify:migrations   # apply all migrations to disposable Postgres
 npm run verify:production   # smoke-check the deployed production app
+npm run reconcile:payments  # reconcile Supabase payment_events settlement proof
 npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage

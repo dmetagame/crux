@@ -94,6 +94,17 @@ const checks: Check[] = [
       }
     },
   },
+  {
+    name: "payment reconciliation auth guard",
+    path: "/api/admin/reconcile-payments",
+    expect: (res, body) => {
+      expectStatus(res, 401);
+      const json = parseJson(body);
+      if (json.error !== "Unauthorized") {
+        throw new Error("expected unauthorized reconciliation response");
+      }
+    },
+  },
 ];
 
 let failures = 0;
