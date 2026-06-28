@@ -10,6 +10,7 @@ import {
   startRunReceipt,
 } from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
+import { requireHousePrivateKey } from "@/lib/wallet-keys";
 
 export const maxDuration = 60;
 
@@ -111,8 +112,7 @@ export async function GET(req: Request) {
           buyerKey = visitorWallet?.key;
           if (!buyerKey) throw new Error("Unknown or unauthorized wallet.");
         } else {
-          buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
-          if (!buyerKey) throw new Error("Server missing BUYER_PRIVATE_KEY");
+          buyerKey = requireHousePrivateKey();
         }
         const result = await runRealResearchAgent({
           model,

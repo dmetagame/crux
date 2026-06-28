@@ -10,6 +10,7 @@ import {
 import { arcTestnet } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import * as readline from "node:readline/promises";
+import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
 
 // --- Parse CLI args ---
 function parseArgs() {
@@ -61,10 +62,12 @@ async function promptForAllowance(): Promise<number> {
 }
 
 // --- Funder wallet (the one you funded via Circle faucet) ---
-const funderKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
-if (!funderKey) {
+let funderKey: `0x${string}`;
+try {
+  funderKey = requireHousePrivateKey();
+} catch (err) {
   console.error(
-    "Missing BUYER_PRIVATE_KEY. Run `npm run generate-wallets` first.",
+    `${(err as Error).message} Run \`npm run generate-wallets\` first.`,
   );
   process.exit(1);
 }

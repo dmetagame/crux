@@ -1,8 +1,9 @@
 import { createPublicClient, http, erc20Abi, formatUnits, formatEther } from "viem";
+import { getHouseAddress } from "./lib/wallet-keys.ts";
 
 const RPC = "https://rpc.testnet.arc.network";
 const USDC = "0x3600000000000000000000000000000000000000" as const;
-const buyer = process.env.BUYER_ADDRESS as `0x${string}`;
+const buyer = getHouseAddress();
 
 const client = createPublicClient({ transport: http(RPC) });
 

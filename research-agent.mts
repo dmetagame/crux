@@ -2,19 +2,19 @@
  * CLI for the autonomous research agent (thin wrapper over lib/agent.ts).
  *
  * Run:  BASE_URL=http://localhost:3001 npm run research-agent
- * Env:  AI_GATEWAY_API_KEY, BUYER_PRIVATE_KEY (.env.local)
+ * Env:  AI_GATEWAY_API_KEY, CRUX_HOUSE_TESTNET_PRIVATE_KEY (.env.local)
  * Args (optional, via env): MODEL, TOPIC, BUDGET, SEED.
  */
 import { runResearchAgent } from "./lib/agent.ts";
 import { scoreBrief } from "./lib/score.ts";
+import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
 
 const MODEL = process.env.MODEL ?? "anthropic/claude-haiku-4.5";
 const TOPIC = process.env.TOPIC ?? "Northwind Logistics";
 const BUDGET = parseFloat(process.env.BUDGET ?? "0.05");
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
 const SEED = process.env.SEED ?? "demo";
-const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}`;
-if (!buyerKey) throw new Error("Missing BUYER_PRIVATE_KEY");
+const buyerKey = requireHousePrivateKey();
 
 console.log(`\nAgent: ${MODEL}  |  Topic: ${TOPIC}  |  Budget: $${BUDGET}  |  Seed: ${SEED}\n`);
 

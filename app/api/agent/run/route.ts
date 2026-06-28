@@ -10,6 +10,7 @@ import {
   startRunReceipt,
 } from "@/lib/run-receipts";
 import { scoreBrief } from "@/lib/score";
+import { requireHousePrivateKey } from "@/lib/wallet-keys";
 
 export const maxDuration = 60;
 
@@ -28,7 +29,6 @@ export async function GET(req: Request) {
   const model = url.searchParams.get("model") ?? "anthropic/claude-haiku-4.5";
   const budget = parseFloat(url.searchParams.get("budget") ?? "0.05");
   const seed = url.searchParams.get("seed") ?? "demo";
-  const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}` | undefined;
   const baseUrl = url.origin;
   const idempotencyKey = requestIdempotencyKey(req, url);
   const idempotencyScope = agentIdempotencyScope(req, "agent:run");
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
       const events: unknown[] = [];
       let spentUsdc = 0;
       try {
-        if (!buyerKey) throw new Error("Server missing BUYER_PRIVATE_KEY");
+        const buyerKey = requireHousePrivateKey();
         const result = await runResearchAgent({
           model,
           topic,

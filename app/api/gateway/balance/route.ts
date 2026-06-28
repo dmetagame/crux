@@ -19,6 +19,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
 import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
+import { getSellerAddress } from "@/lib/wallet-keys";
 
 const GATEWAY_API = "https://gateway-api-testnet.circle.com/v1/balances";
 const ARC_TESTNET_DOMAIN = 26;
@@ -49,15 +50,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const address = process.env.SELLER_ADDRESS;
-  if (!address) {
+  let sellerAddress: `0x${string}`;
+  try {
+    sellerAddress = getSellerAddress();
+  } catch (err) {
+    console.error("[gateway] seller wallet configuration error:", (err as Error).message);
     return NextResponse.json(
-      { error: "SELLER_ADDRESS not configured" },
+      { error: "Seller wallet is not configured" },
       { status: 500 },
     );
   }
-
-  const sellerAddress = address as `0x${string}`;
 
   try {
     const [gatewayResponse, walletBalance] = await Promise.all([

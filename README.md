@@ -119,8 +119,8 @@ different rail (Coinbase facilitator) from the Circle Gateway batching on Arc.
 ```bash
 npm install
 cp .env.example .env.local
-npm run generate-wallets          # creates seller + buyer wallets in .env.local
-# Fund the buyer at https://faucet.circle.com (Arc Testnet)
+npm run generate-wallets          # creates seller + house testnet wallets in .env.local
+# Fund the house wallet at https://faucet.circle.com (Arc Testnet)
 ```
 Then add to `.env.local`:
 ```
@@ -129,11 +129,35 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 AI_GATEWAY_API_KEY=...                  # Vercel AI Gateway
 ```
+Generated wallet env names are testnet-scoped:
+```
+CRUX_KEY_SCOPE=arc-testnet
+CRUX_SELLER_TESTNET_ADDRESS=...
+CRUX_SELLER_TESTNET_PRIVATE_KEY=...
+CRUX_HOUSE_TESTNET_ADDRESS=...
+CRUX_HOUSE_TESTNET_PRIVATE_KEY=...
+```
+The older `SELLER_*` and `BUYER_*` names are still accepted as aliases for
+existing deployments. New setups should use the `CRUX_*_TESTNET_*` names so
+demo keys cannot be confused with future production custody.
+
 Apply the SQL migrations in `supabase/migrations/` to your project (SQL Editor or `supabase db push`).
 After a production deploy or database migration, run `npm run verify:production`
 to smoke-check the live x402 challenge, wallet auth path, marketplace, stats,
 agent topics, and public agent budget guard. Override the target with
 `CRUX_VERIFY_BASE_URL=https://your-domain.example`.
+
+### Wallet custody
+- Seller testnet wallet: receives x402 payments and is used only for Gateway
+  admin withdrawals. Keep `CRUX_SELLER_TESTNET_PRIVATE_KEY` out of preview/dev
+  environments unless withdrawal testing is needed.
+- House testnet wallet: funds capped public/agent runs. Keep its Gateway balance
+  small and rotate it independently from the seller wallet.
+- `CRUX_KEY_SCOPE` must stay `arc-testnet`, `testnet`, or `demo`; the app refuses
+  to use private keys when this scope is changed to a production-like value.
+- To rotate a wallet, generate a fresh keypair, fund/deposit the new address,
+  update both the address and private-key env vars together, redeploy, and run
+  `npm run verify:production`. Do not reuse hackathon demo keys for mainnet.
 
 ### Commands
 ```bash

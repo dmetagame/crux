@@ -1,8 +1,8 @@
 /**
  * User-funded wallet lane (optional, additive).
  *
- * The default Crux demo pays from a shared house wallet (BUYER_PRIVATE_KEY) so a
- * visitor can watch real settlements with zero friction. This module adds an
+ * The default Crux demo pays from a shared house testnet wallet so a visitor
+ * can watch real settlements with zero friction. This module adds an
  * OPT-IN path: a visitor gets their own generated Arc *testnet* wallet, funds it
  * themselves at faucet.circle.com, and pays for research from it — so it shows up
  * as a genuinely distinct payer in the traction counter (payment_events.payer is

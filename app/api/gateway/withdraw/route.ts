@@ -24,6 +24,7 @@ import {
 } from "@circle-fin/x402-batching/client";
 import { createClient } from "@supabase/supabase-js";
 import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
+import { requireSellerPrivateKey } from "@/lib/wallet-keys";
 
 const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
   arcTestnet: "Arc Testnet",
@@ -45,10 +46,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const privateKey = process.env.SELLER_PRIVATE_KEY;
-  if (!privateKey) {
+  let privateKey: `0x${string}`;
+  try {
+    privateKey = requireSellerPrivateKey();
+  } catch (err) {
+    console.error("[gateway] seller private-key configuration error:", (err as Error).message);
     return NextResponse.json(
-      { error: "SELLER_PRIVATE_KEY not configured" },
+      { error: "Seller withdrawal wallet is not configured" },
       { status: 500 },
     );
   }
@@ -76,7 +80,7 @@ export async function POST(req: NextRequest) {
 
   const gateway = new GatewayClient({
     chain: "arcTestnet",
-    privateKey: privateKey as `0x${string}`,
+    privateKey,
   });
 
   const isCrossChain = destinationChain !== "arcTestnet";
@@ -114,7 +118,7 @@ export async function POST(req: NextRequest) {
     try {
       const destGateway = new GatewayClient({
         chain: destinationChain as SupportedChainName,
-        privateKey: privateKey as `0x${string}`,
+        privateKey,
       });
       const destBalances = await destGateway.getBalances();
       if (

@@ -1,6 +1,7 @@
 import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
 
-const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}`;
+const buyerKey = requireHousePrivateKey();
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";
 const TOPIC = encodeURIComponent("Northwind Logistics");
 

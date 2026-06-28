@@ -1,6 +1,7 @@
 import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
 
-const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}`;
+const buyerKey = requireHousePrivateKey();
 
 const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: buyerKey });
 

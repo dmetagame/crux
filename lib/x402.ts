@@ -21,13 +21,12 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
+import { getSellerAddress } from "@/lib/wallet-keys";
 
 // Arc Testnet contract addresses (from @circle-fin/x402-batching SDK)
 const ARC_TESTNET_NETWORK = "eip155:5042002";
 const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
 const ARC_TESTNET_GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
-
-export const sellerAddress = process.env.SELLER_ADDRESS as `0x${string}`;
 
 const facilitator = new BatchFacilitatorClient();
 
@@ -92,7 +91,7 @@ function buildPaymentRequirements(price: string, maxTimeoutSeconds: number) {
     network: ARC_TESTNET_NETWORK,
     asset: ARC_TESTNET_USDC,
     amount: amount.toString(),
-    payTo: sellerAddress,
+    payTo: getSellerAddress(),
     maxTimeoutSeconds,
     extra: {
       name: "GatewayWalletBatched",
@@ -114,10 +113,19 @@ export function withGateway(
   endpoint: string,
 ) {
   return async (req: NextRequest) => {
-    const requirements = buildPaymentRequirements(
-      price,
-      await getMaxTimeoutSeconds(),
-    );
+    let requirements: ReturnType<typeof buildPaymentRequirements>;
+    try {
+      requirements = buildPaymentRequirements(
+        price,
+        await getMaxTimeoutSeconds(),
+      );
+    } catch (err) {
+      console.error("[x402] wallet configuration error:", (err as Error).message);
+      return NextResponse.json(
+        { error: "x402 seller wallet is not configured." },
+        { status: 500 },
+      );
+    }
     const paymentSignature = req.headers.get("payment-signature");
 
     // No payment — return 402 with Gateway batching payment requirements

@@ -5,7 +5,7 @@
  * USDC — a genuine external counterparty, the one thing a pure-Arc entry can't show.
  *
  * Run:  npm run external-demo
- * Env:  BUYER_PRIVATE_KEY (.env.local). The buyer must hold Base Sepolia USDC
+ * Env:  CRUX_HOUSE_TESTNET_PRIVATE_KEY (.env.local). The house wallet must hold Base Sepolia USDC
  *       (free from https://faucet.circle.com — select Base Sepolia).
  */
 import { x402Client, x402HTTPClient } from "@x402/core/client";
@@ -13,9 +13,9 @@ import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
 import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
+import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
 
-const buyerKey = process.env.BUYER_PRIVATE_KEY as `0x${string}`;
-if (!buyerKey) throw new Error("Missing BUYER_PRIVATE_KEY");
+const buyerKey = requireHousePrivateKey();
 
 const BAZAAR = "https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources?limit=200";
 const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
