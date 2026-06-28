@@ -1,6 +1,6 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
 import { guardAgentRun } from "@/lib/agent-access";
-import { ndjsonError } from "@/lib/ndjson";
+import { createNdjsonWriter, ndjsonError } from "@/lib/ndjson";
 import { saveRunReceipt } from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
 
@@ -43,10 +43,9 @@ export async function GET(req: Request) {
   });
   if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
 
-  const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      const { send, close } = createNdjsonWriter(controller);
       const events: unknown[] = [];
       try {
         let buyerKey: `0x${string}` | undefined;
@@ -100,7 +99,7 @@ export async function GET(req: Request) {
         send({ type: "error", message });
       } finally {
         await guard.release();
-        controller.close();
+        close();
       }
     },
   });
