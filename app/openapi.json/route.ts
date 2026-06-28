@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     paths: {
       "/api/marketplace": {
         get: {
-          summary: "List free marketplace metadata and previews",
+          summary: "List benchmark and real-source marketplace metadata",
           responses: { "200": { description: "Marketplace catalog" } },
           "x-rateLimit": "120 requests/minute/IP",
         },
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
             required: true,
             network: "arcTestnet",
             settlement: "circle_gateway_batched",
-            discovery: "Call /api/marketplace for source ids and prices.",
+            discovery: "Call /api/marketplace and use realSources[].id and realSources[].price.",
           },
         },
       },
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
             required: true,
             network: "arcTestnet",
             settlement: "circle_gateway_batched",
-            discovery: "Call /api/marketplace for ids and prices.",
+            discovery: "Call /api/marketplace and use sources[].id and sources[].price.",
           },
         },
       },

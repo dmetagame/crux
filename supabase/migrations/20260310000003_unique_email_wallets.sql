@@ -1,6 +1,16 @@
 -- Email-backed visitor wallets are recoverable: the same normalized email
 -- should always resolve to the same custodial testnet wallet.
 
+create table if not exists public.user_wallets (
+  id uuid primary key default gen_random_uuid(),
+  email text,
+  address text not null,
+  private_key text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.user_wallets enable row level security;
+
 update public.user_wallets
 set email = lower(trim(email))
 where email is not null

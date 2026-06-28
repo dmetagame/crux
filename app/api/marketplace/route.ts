@@ -1,11 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { catalog } from "@/lib/marketplace";
+import { realCatalog } from "@/lib/real-sources";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
 /**
- * Free marketplace catalog. Returns source metadata and free previews only —
- * never paid content. This is the surface the agent's `list_marketplace` and
- * `preview` tools read before deciding what to pay for.
+ * Free marketplace catalog. Returns source metadata/previews only — never paid
+ * content. `sources` is the scored benchmark catalog; `realSources` is the live
+ * public-data catalog used by /api/real/{source}.
  */
 export async function GET(req: NextRequest) {
   const rate = await consumeRateLimit({
@@ -19,5 +20,5 @@ export async function GET(req: NextRequest) {
       { status: 429, headers: rateLimitHeaders(rate) },
     );
   }
-  return NextResponse.json({ sources: catalog() });
+  return NextResponse.json({ sources: catalog(), realSources: realCatalog() });
 }

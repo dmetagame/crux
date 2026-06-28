@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
       "Payment-native research data and autonomous research demos over x402 on Arc Testnet.",
     homepage: `${origin}/agent`,
     openapi: `${origin}/openapi.json`,
+    marketplace: `${origin}/api/marketplace`,
     publicStats: `${origin}/api/stats`,
     x402: {
       supported: true,
