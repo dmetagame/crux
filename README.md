@@ -161,6 +161,9 @@ agent topics, and public agent budget guard. Override the target with
   `20260310000009_encrypt_user_wallet_keys.sql` migration, set the env key,
   then run `npm run wallets:encrypt -- --dry-run` followed by
   `npm run wallets:encrypt`.
+- Production backfills can also run through the protected
+  `/api/admin/wallet-encryption` endpoint when `CRUX_MAINTENANCE_TOKEN` is set;
+  remove or rotate that token after the maintenance run.
 - After all visitor-wallet rows are encrypted, set
   `CRUX_WALLET_REQUIRE_ENCRYPTED_WALLETS=true` to refuse legacy plaintext rows.
 - To rotate a wallet, generate a fresh keypair, fund/deposit the new address,
