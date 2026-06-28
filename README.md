@@ -184,8 +184,9 @@ agent topics, and public agent budget guard. Override the target with
   set `CRUX_MAINTENANCE_TOKEN`, redeploy, then run
   `CRUX_MAINTENANCE_TOKEN=... npm run alerts:test`. Remove or rotate the token
   after the test if it was created only for maintenance.
-- Payment reconciliation runs every 30 minutes through Vercel Cron at
-  `/api/admin/reconcile-payments`. It scans recent `payment_events`, refreshes
+- Payment reconciliation runs daily through Vercel Cron at
+  `/api/admin/reconcile-payments` (Hobby plan limit; use `*/30 * * * *` on Pro
+  if you want 30-minute checks). It scans recent `payment_events`, refreshes
   stale settlement proof columns, re-verifies Arc transaction hashes, and alerts
   if settlement records are missing, stale, failed, or inconsistent.
 - Manual reconciliation can run locally with Supabase env vars loaded:

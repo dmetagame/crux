@@ -16,7 +16,7 @@ import {
 
 export const maxDuration = 60;
 
-const VERCEL_CRON_SCHEDULE = "*/30 * * * *";
+const VERCEL_CRON_SCHEDULE = "0 3 * * *";
 
 export async function GET(req: NextRequest) {
   const authMode = authorizeReconciliation(req);
