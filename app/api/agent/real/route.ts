@@ -1,4 +1,5 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun } from "@/lib/agent-access";
 import { createNdjsonWriter, ndjsonError, ndjsonResponse } from "@/lib/ndjson";
 import { agentIdempotencyScope, requestIdempotencyKey } from "@/lib/run-idempotency";
@@ -89,8 +90,23 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
+    const message = alertErrorMessage(err);
+    void sendOperationalAlert({
+      event: "agent_receipt_start_failed",
+      severity: "critical",
+      title: "Real run receipt start failed",
+      summary: message,
+      details: {
+        route: "agent:real",
+        subject,
+        model,
+        budget,
+        payerKind,
+      },
+      dedupeKey: `agent-receipt-start-failed:agent:real:${payerKind}:${model}`,
+    });
     await guard.release();
-    return ndjsonError((err as Error).message, 500);
+    return ndjsonError(message, 500);
   }
   if (run.replay && run.receipt) {
     await guard.release();
@@ -139,6 +155,22 @@ export async function GET(req: Request) {
           });
         } catch (receiptErr) {
           console.error("[receipt] save failed:", (receiptErr as Error).message);
+          void sendOperationalAlert({
+            event: "agent_receipt_save_failed",
+            severity: "critical",
+            title: "Real run receipt save failed",
+            summary: alertErrorMessage(receiptErr),
+            details: {
+              route: "agent:real",
+              runId: run.id,
+              subject,
+              model,
+              budget,
+              spentUsdc: result.spent,
+              payerKind,
+            },
+            dedupeKey: `agent-receipt-save-failed:agent:real:${payerKind}:${model}`,
+          });
         }
         send({
           type: "done",
@@ -147,13 +179,33 @@ export async function GET(req: Request) {
           receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
         });
       } catch (err) {
-        let message = (err as Error).message;
+        let message = alertErrorMessage(err);
+        let expectedFundingIssue = false;
         // The first run from a user wallet deposits into the Gateway, which fails
         // if the visitor hasn't faucet'd yet — turn that into a clear instruction.
         if (walletId && /insufficient|balance|deposit|funds|gas/i.test(message)) {
+          expectedFundingIssue = true;
           message =
             "This wallet isn't funded yet. Send it 20 USDC + native gas at " +
             "faucet.circle.com (Arc testnet), wait for it to land, then run again.";
+        }
+        if (!expectedFundingIssue) {
+          void sendOperationalAlert({
+            event: "agent_run_failed",
+            severity: "warning",
+            title: "Real agent run failed",
+            summary: message,
+            details: {
+              route: "agent:real",
+              runId: run.id,
+              subject,
+              model,
+              budget,
+              spentUsdc,
+              payerKind,
+            },
+            dedupeKey: `agent-run-failed:agent:real:${payerKind}:${model}`,
+          });
         }
         try {
           await failRunReceipt(
@@ -177,6 +229,21 @@ export async function GET(req: Request) {
           );
         } catch (receiptErr) {
           console.error("[receipt] fail update failed:", (receiptErr as Error).message);
+          void sendOperationalAlert({
+            event: "agent_receipt_fail_update_failed",
+            severity: "critical",
+            title: "Real run receipt fail update failed",
+            summary: alertErrorMessage(receiptErr),
+            details: {
+              route: "agent:real",
+              runId: run.id,
+              subject,
+              model,
+              budget,
+              payerKind,
+            },
+            dedupeKey: `agent-receipt-fail-update-failed:agent:real:${payerKind}:${model}`,
+          });
         }
         send({ type: "error", message });
       } finally {

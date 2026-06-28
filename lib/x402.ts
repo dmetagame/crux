@@ -19,6 +19,7 @@
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
 import { getSellerAddress } from "@/lib/wallet-keys";
@@ -191,6 +192,19 @@ export function withGateway(
         console.error(
           `[x402] Settlement failed for ${endpoint}: ${settleResult.errorReason}`,
         );
+        void sendOperationalAlert({
+          event: "x402_settlement_failed",
+          severity: "critical",
+          title: "x402 settlement failed",
+          summary: settleResult.errorReason ?? "Unknown settlement failure",
+          details: {
+            endpoint,
+            network: requirements.network,
+            amount: requirements.amount,
+            payer: verifyResult.payer ?? "unknown",
+          },
+          dedupeKey: `x402-settlement-failed:${endpoint}:${settleResult.errorReason ?? "unknown"}`,
+        });
         return NextResponse.json(
           {
             error: "Payment settlement failed",
@@ -235,6 +249,21 @@ export function withGateway(
 
       if (error) {
         console.error("Failed to record payment event:", error.message);
+        void sendOperationalAlert({
+          event: "payment_event_record_failed",
+          severity: "warning",
+          title: "Payment event recording failed",
+          summary: error.message,
+          details: {
+            endpoint,
+            network: requirements.network,
+            amountUsdc,
+            payer,
+            settlementKind: settlementProof.settlement_kind,
+            settlementStatus: settlementProof.settlement_status,
+          },
+          dedupeKey: `payment-event-record-failed:${endpoint}:${error.message}`,
+        });
       }
 
       console.log(
@@ -263,6 +292,19 @@ export function withGateway(
       const message =
         error instanceof Error ? error.message : String(error);
       console.error("[x402] Payment processing error:", message);
+      void sendOperationalAlert({
+        event: "x402_payment_processing_error",
+        severity: "critical",
+        title: "x402 payment processing error",
+        summary: alertErrorMessage(error),
+        details: {
+          endpoint,
+          network: requirements.network,
+          amount: requirements.amount,
+          hasPaymentSignature: true,
+        },
+        dedupeKey: `x402-payment-processing-error:${endpoint}:${alertErrorMessage(error)}`,
+      });
       return NextResponse.json(
         { error: "Payment processing error", message },
         { status: 500 },

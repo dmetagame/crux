@@ -37,6 +37,13 @@ npx vercel@latest --prod --yes --scope dmetagames-projects
 
 ## After Deploy
 
+Confirm production alerting is configured when the release changes payment,
+agent, rate-limit, or receipt behavior:
+
+```bash
+npx vercel@latest env ls --scope dmetagames-projects | grep CRUX_ALERT_WEBHOOK_URL
+```
+
 Run the smoke check:
 
 ```bash

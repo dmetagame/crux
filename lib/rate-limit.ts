@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { sha256Hex } from "@/lib/access-crypto";
+import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -70,6 +71,19 @@ export async function consumeRateLimit(opts: {
   } catch (err) {
     if (failureMode === "closed") {
       console.warn("[rate-limit] failing closed:", (err as Error).message);
+      void sendOperationalAlert({
+        event: "rate_limit_fail_closed",
+        severity: "critical",
+        title: "Rate limiter failed closed",
+        summary: alertErrorMessage(err),
+        details: {
+          scope: alertScope(opts.key),
+          limit,
+          windowSeconds,
+          cost,
+        },
+        dedupeKey: `rate-limit-fail-closed:${alertScope(opts.key)}`,
+      });
       return {
         allowed: false,
         remaining: 0,
@@ -89,11 +103,13 @@ export async function acquireRunLock(opts: {
   failureMode?: FailureMode;
 }): Promise<RunLock> {
   const failureMode = opts.failureMode ?? "open";
+  const limit = Math.max(1, Math.floor(opts.limit));
+  const ttlSeconds = Math.max(1, Math.floor(opts.ttlSeconds));
   try {
     const { data, error } = await admin().rpc("try_acquire_run_lock", {
       p_key: opts.key,
-      p_limit: Math.max(1, Math.floor(opts.limit)),
-      p_ttl_seconds: Math.max(1, Math.floor(opts.ttlSeconds)),
+      p_limit: limit,
+      p_ttl_seconds: ttlSeconds,
     });
     if (error) throw error;
     const row = Array.isArray(data) ? data[0] : data;
@@ -106,6 +122,18 @@ export async function acquireRunLock(opts: {
   } catch (err) {
     if (failureMode === "closed") {
       console.warn("[run-lock] failing closed:", (err as Error).message);
+      void sendOperationalAlert({
+        event: "run_lock_fail_closed",
+        severity: "critical",
+        title: "Agent run lock failed closed",
+        summary: alertErrorMessage(err),
+        details: {
+          scope: alertScope(opts.key),
+          limit,
+          ttlSeconds,
+        },
+        dedupeKey: `run-lock-fail-closed:${alertScope(opts.key)}`,
+      });
       return {
         acquired: false,
         activeCount: null,
@@ -152,4 +180,10 @@ export function budgetCostUnits(usdc: number) {
 
 function retryAt(seconds: number) {
   return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+function alertScope(key: string) {
+  const parts = key.split(":");
+  if (parts.length <= 1) return key;
+  return parts.slice(0, -1).join(":");
 }

@@ -1,4 +1,5 @@
 import { runBaseline, type Strategy } from "@/lib/baseline";
+import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun } from "@/lib/agent-access";
 import { createNdjsonWriter, ndjsonError } from "@/lib/ndjson";
 import { scoreBrief } from "@/lib/score";
@@ -44,7 +45,21 @@ export async function GET(req: Request) {
         const score = scoreBrief(result.brief, result.factsClaimed, topic);
         send({ type: "done", result, score });
       } catch (err) {
-        send({ type: "error", message: (err as Error).message });
+        const message = alertErrorMessage(err);
+        void sendOperationalAlert({
+          event: "agent_run_failed",
+          severity: "warning",
+          title: "Baseline agent run failed",
+          summary: message,
+          details: {
+            route: "agent:baseline",
+            topic,
+            strategy,
+            budget,
+          },
+          dedupeKey: `agent-run-failed:agent:baseline:${strategy}`,
+        });
+        send({ type: "error", message });
       } finally {
         await guard.release();
         close();

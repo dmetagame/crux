@@ -1,4 +1,5 @@
 import { runResearchAgent } from "@/lib/agent";
+import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun } from "@/lib/agent-access";
 import { createNdjsonWriter, ndjsonError, ndjsonResponse } from "@/lib/ndjson";
 import { agentIdempotencyScope, requestIdempotencyKey } from "@/lib/run-idempotency";
@@ -69,8 +70,22 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
+    const message = alertErrorMessage(err);
+    void sendOperationalAlert({
+      event: "agent_receipt_start_failed",
+      severity: "critical",
+      title: "Benchmark run receipt start failed",
+      summary: message,
+      details: {
+        route: "agent:run",
+        topic,
+        model,
+        budget,
+      },
+      dedupeKey: `agent-receipt-start-failed:agent:run:${model}`,
+    });
     await guard.release();
-    return ndjsonError((err as Error).message, 500);
+    return ndjsonError(message, 500);
   }
   if (run.replay && run.receipt) {
     await guard.release();
@@ -115,6 +130,21 @@ export async function GET(req: Request) {
           });
         } catch (receiptErr) {
           console.error("[receipt] save failed:", (receiptErr as Error).message);
+          void sendOperationalAlert({
+            event: "agent_receipt_save_failed",
+            severity: "critical",
+            title: "Benchmark run receipt save failed",
+            summary: alertErrorMessage(receiptErr),
+            details: {
+              route: "agent:run",
+              runId: run.id,
+              topic,
+              model,
+              budget,
+              spentUsdc: result.spent,
+            },
+            dedupeKey: `agent-receipt-save-failed:agent:run:${model}`,
+          });
         }
         send({
           type: "done",
@@ -124,7 +154,22 @@ export async function GET(req: Request) {
           receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
         });
       } catch (err) {
-        const message = (err as Error).message;
+        const message = alertErrorMessage(err);
+        void sendOperationalAlert({
+          event: "agent_run_failed",
+          severity: "warning",
+          title: "Benchmark agent run failed",
+          summary: message,
+          details: {
+            route: "agent:run",
+            runId: run.id,
+            topic,
+            model,
+            budget,
+            spentUsdc,
+          },
+          dedupeKey: `agent-run-failed:agent:run:${model}`,
+        });
         try {
           await failRunReceipt(
             run.id,
@@ -141,6 +186,20 @@ export async function GET(req: Request) {
           );
         } catch (receiptErr) {
           console.error("[receipt] fail update failed:", (receiptErr as Error).message);
+          void sendOperationalAlert({
+            event: "agent_receipt_fail_update_failed",
+            severity: "critical",
+            title: "Benchmark run receipt fail update failed",
+            summary: alertErrorMessage(receiptErr),
+            details: {
+              route: "agent:run",
+              runId: run.id,
+              topic,
+              model,
+              budget,
+            },
+            dedupeKey: `agent-receipt-fail-update-failed:agent:run:${model}`,
+          });
         }
         send({ type: "error", message });
       } finally {

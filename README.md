@@ -170,6 +170,15 @@ agent topics, and public agent budget guard. Override the target with
   update both the address and private-key env vars together, redeploy, and run
   `npm run verify:production`. Do not reuse hackathon demo keys for mainnet.
 
+### Operations
+- Set `CRUX_ALERT_WEBHOOK_URL` in production to receive operational alerts for
+  x402 settlement failures, payment ledger write failures, rate-limit/run-lock
+  fail-closed events, and agent/receipt failures.
+- `CRUX_ALERT_WEBHOOK_TOKEN` is optional; when set, Crux sends it as an
+  `Authorization: Bearer ...` header for custom alert receivers.
+- Alerts are best-effort, time-bounded, deduped in-process, and redact private
+  keys, bearer tokens, JWT-like tokens, and raw payment payloads.
+
 ### Commands
 ```bash
 npm run dev                 # start the seller (marketplace + x402 endpoints)
