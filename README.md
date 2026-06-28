@@ -130,6 +130,10 @@ SUPABASE_SERVICE_ROLE_KEY=...
 AI_GATEWAY_API_KEY=...                  # Vercel AI Gateway
 ```
 Apply the SQL migrations in `supabase/migrations/` to your project (SQL Editor or `supabase db push`).
+After a production deploy or database migration, run `npm run verify:production`
+to smoke-check the live x402 challenge, wallet auth path, marketplace, stats,
+agent topics, and public agent budget guard. Override the target with
+`CRUX_VERIFY_BASE_URL=https://your-domain.example`.
 
 ### Commands
 ```bash
@@ -137,6 +141,7 @@ npm run dev                 # start the seller (marketplace + x402 endpoints)
 npm run research-agent      # run the autonomous agent (brief + spend ledger + score)
 npm run compare             # the money-shot: agent vs. baselines, side-by-side
 npm run external-demo       # pay a REAL external x402 service on Base (via the Bazaar)
+npm run verify:production   # smoke-check the deployed production app
 ```
 Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
 
