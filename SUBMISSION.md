@@ -2,6 +2,7 @@
 
 **Live:** https://crux-khaki.vercel.app · **Repo:** https://github.com/dmetagame/crux
 **RFB-01 — Autonomous Paying Agents.** Settlement: Circle Gateway nanopayments on Arc testnet (x402).
+**Submission target:** July 6, 2026.
 
 ---
 
@@ -26,6 +27,18 @@ Every run on either surface fires real test-USDC settlements on Arc, counted liv
 Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
 purchase rationales, final brief, benchmark score when available, and Arcscan settlement links.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
+
+## Agent-access story
+Crux is not only a website. Other agents can discover and use it through:
+
+- `/.well-known/crux-agent.json`
+- `/openapi.json`
+- `AGENT_INTEGRATION.md`
+
+Production public house-wallet runner access is intentionally disabled. External agents can either
+buy x402 resources directly, pay from a visitor-funded Arc testnet wallet, or use a scoped trusted
+Crux agent key for house-wallet runner access. This keeps the demo usable while making the
+post-hackathon API posture credible.
 
 ## How it maps to the judging criteria
 - **Agentic sophistication (30%)** — the agent makes genuine cost/value tradeoffs (preview vs buy,

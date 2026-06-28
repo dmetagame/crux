@@ -59,6 +59,19 @@ available, and Gateway settlement ids for every paid source. This is the async j
 artifact: a reviewer does not have to trust the live UI or the README; they can
 open a single run and inspect what the agent decided and what actually settled.
 
+## External-agent integration
+
+Crux is discoverable by other agents:
+
+- `/.well-known/crux-agent.json` — machine-readable capabilities and auth modes
+- `/openapi.json` — route contract for x402 resources, visitor wallets, and runners
+- [`AGENT_INTEGRATION.md`](./AGENT_INTEGRATION.md) — copy-paste integration flows
+- [`DEMO.md`](./DEMO.md) — judge/demo runbook
+
+Production public house-wallet runner access is disabled. External agents should
+either buy x402 resources directly, run from a visitor-funded wallet, or use a
+scoped Crux agent key.
+
 ## Architecture
 
 ```
@@ -198,6 +211,9 @@ agent topics, and public agent budget guard. Override the target with
 - Manual reconciliation can run locally with Supabase env vars loaded:
   `npm run reconcile:payments -- --dry-run`, or against the deployed route with
   `Authorization: Bearer $CRON_SECRET` if `CRON_SECRET` is configured.
+- Keep `CRUX_PUBLIC_AGENT_RUNS_ENABLED=false` in production. The web demo uses
+  admin/operator sessions for house-wallet runs, visitor mode uses funded visitor
+  wallets, and trusted external agents use scoped Bearer keys.
 
 ### Commands
 ```bash
