@@ -4,8 +4,13 @@ export function runReceiptUrl(origin: string, receiptId: string) {
   return new URL(`/runs/${receiptId}`, origin).toString();
 }
 
+export function runStatusUrl(origin: string, receiptId: string) {
+  return new URL(`/api/runs/${receiptId}`, origin).toString();
+}
+
 export function replayRunReceipt(receipt: RunReceipt, origin: string) {
   const receiptUrl = runReceiptUrl(origin, receipt.id);
+  const statusUrl = runStatusUrl(origin, receipt.id);
   if (receipt.status === "completed") {
     const payload = receipt.payload ?? {};
     return {
@@ -16,6 +21,7 @@ export function replayRunReceipt(receipt: RunReceipt, origin: string) {
         ...(payload.score ? { score: payload.score } : {}),
         receiptId: receipt.id,
         receiptUrl,
+        statusUrl,
         replayed: true,
       },
     };
@@ -29,6 +35,7 @@ export function replayRunReceipt(receipt: RunReceipt, origin: string) {
         message: receipt.error ?? "The original run failed.",
         receiptId: receipt.id,
         receiptUrl,
+        statusUrl,
         replayed: true,
       },
     };
@@ -41,6 +48,7 @@ export function replayRunReceipt(receipt: RunReceipt, origin: string) {
       message: "A run with this Idempotency-Key is already in progress.",
       receiptId: receipt.id,
       receiptUrl,
+      statusUrl,
       replayed: true,
     },
   };

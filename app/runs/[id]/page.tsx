@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { RunReceiptPoller } from "@/components/run-receipt-poller";
 import TopoBackground from "@/components/topo-background";
 import { SOURCES } from "@/lib/marketplace";
 import { REAL_SOURCES } from "@/lib/real-sources";
-import { getRunReceipt } from "@/lib/run-receipts";
+import { getRunReceiptWithStaleTimeout } from "@/lib/run-receipts";
 import { settlementExplorerUrl, settlementLabel } from "@/lib/settlement";
 
 type ReceiptPageProps = {
@@ -60,7 +61,7 @@ export default function RunReceiptPage(props: ReceiptPageProps) {
 async function RunReceiptContent({ params }: ReceiptPageProps) {
   await connection();
   const { id } = await params;
-  const receipt = await getRunReceipt(id);
+  const receipt = await getRunReceiptWithStaleTimeout(id);
   if (!receipt) notFound();
 
   const payload = receipt.payload;
@@ -88,6 +89,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
   return (
       <div className="relative z-10 mx-auto max-w-5xl px-5 py-10">
+        <RunReceiptPoller active={receipt.status === "running"} />
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <Link href="/agent" className="text-xs text-zinc-500 hover:text-teal-300">
@@ -139,7 +141,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
           >
             {receipt.status === "failed"
               ? receipt.error ?? "This run failed before it produced a final result."
-              : "This run is still marked running. If it does not complete, retry with a new Idempotency-Key."}
+              : "This run is still active. This receipt will update automatically until it completes or times out."}
           </section>
         )}
 

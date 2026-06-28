@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     openapi: `${origin}/openapi.json`,
     marketplace: `${origin}/api/marketplace`,
     publicStats: `${origin}/api/stats`,
+    runStatus: `${origin}/api/runs/{id}`,
     x402: {
       supported: true,
       network: "arcTestnet",
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       header: "Idempotency-Key",
       appliesTo: ["/api/agent/real", "/api/agent/run"],
       behavior:
-        "Retries with the same key and caller receive the existing running/completed/failed run instead of spending again.",
+        "Retries with the same key and caller receive the existing running/completed/failed run instead of spending again. Poll /api/runs/{id} while a run is still running.",
     },
   });
 }

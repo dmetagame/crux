@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { runStaleTimeoutSeconds } from "@/lib/run-receipts";
 
 export async function GET(req: NextRequest) {
   const origin = new URL(req.url).origin;
+  const staleTimeoutSeconds = runStaleTimeoutSeconds();
 
   return NextResponse.json({
     openapi: "3.1.0",
@@ -26,6 +28,25 @@ export async function GET(req: NextRequest) {
           summary: "Read public payment traction and settlement proof metadata",
           responses: { "200": { description: "Live Crux stats" } },
           "x-rateLimit": "60 requests/minute/IP",
+        },
+      },
+      "/api/runs/{id}": {
+        get: {
+          summary: "Read durable agent run status/result",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            "200": { description: "Run status, receipt URL, and result/error when available" },
+            "404": { description: "Run not found" },
+            "429": { description: "Run status rate limit reached" },
+          },
+          "x-rateLimit": "120 requests/minute/IP",
+          "x-crux": {
+            states: ["running", "completed", "failed"],
+            pollAfterSeconds: 5,
+            staleTimeoutSeconds,
+          },
         },
       },
       "/api/real/{source}": {
@@ -132,7 +153,7 @@ function runnerTool(scope: string, summary: string) {
         contentType: "application/x-ndjson",
         publicDemoAccess: true,
         idempotency:
-          "Send Idempotency-Key on retried agent-run requests to avoid duplicate spend.",
+          "Send Idempotency-Key on retried agent-run requests to avoid duplicate spend. If a replay returns running/409, poll /api/runs/{receiptId}.",
         note: "Public demo access is tightly capped because this route can spend the house wallet.",
       },
     },

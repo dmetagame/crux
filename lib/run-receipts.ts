@@ -48,6 +48,8 @@ export interface StartedRunReceipt {
   receipt: RunReceipt | null;
 }
 
+const DEFAULT_STALE_TIMEOUT_SECONDS = 300;
+
 function admin() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -231,6 +233,34 @@ export async function getRunReceipt(id: string): Promise<RunReceipt | null> {
   return mapReceipt(data);
 }
 
+export async function getRunReceiptWithStaleTimeout(id: string): Promise<RunReceipt | null> {
+  const receipt = await getRunReceipt(id);
+  if (!receipt || !isRunReceiptStale(receipt)) return receipt;
+
+  const timeoutSeconds = runStaleTimeoutSeconds();
+  const message = `Run timed out after ${timeoutSeconds} seconds without completing.`;
+  const payload =
+    receipt.payload && typeof receipt.payload === "object" && !Array.isArray(receipt.payload)
+      ? { ...receipt.payload, status: "failed", stale: true, error: message }
+      : { status: "failed", stale: true, error: message };
+
+  const { data, error } = await admin()
+    .from("run_receipts")
+    .update({
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error: message,
+      payload,
+    })
+    .eq("id", receipt.id)
+    .eq("status", "running")
+    .select("*")
+    .single();
+
+  if (error || !data) return (await getRunReceipt(id)) ?? receipt;
+  return mapReceipt(data);
+}
+
 async function getRunReceiptByIdempotency(
   idempotencyScope: string,
   idempotencyKeyHash: string,
@@ -252,4 +282,16 @@ function isUniqueViolation(error: { code?: string; message?: string }) {
 
 function isRunStateColumnError(message: string) {
   return /status|started_at|completed_at|idempotency_scope|idempotency_key_hash/.test(message);
+}
+
+export function runStaleTimeoutSeconds() {
+  const parsed = Number.parseInt(process.env.CRUX_RUN_STALE_TIMEOUT_SECONDS ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_STALE_TIMEOUT_SECONDS;
+}
+
+export function isRunReceiptStale(receipt: Pick<RunReceipt, "status" | "startedAt">) {
+  if (receipt.status !== "running" || !receipt.startedAt) return false;
+  const started = new Date(receipt.startedAt).getTime();
+  if (!Number.isFinite(started)) return false;
+  return Date.now() - started > runStaleTimeoutSeconds() * 1000;
 }
