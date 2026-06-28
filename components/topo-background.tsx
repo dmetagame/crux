@@ -151,7 +151,7 @@ export default function TopoBackground() {
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-[linear-gradient(155deg,#160f2b_0%,#0c0a16_55%,#050509_100%)]">
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[linear-gradient(155deg,#160f2b_0%,#0c0a16_55%,#050509_100%)]">
       <canvas ref={ref} className="absolute inset-0" style={{ filter: "blur(0.6px)" }} />
       {/* purple glows + vignette for depth */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_15%_10%,rgba(139,92,246,0.16),transparent_60%)]" />

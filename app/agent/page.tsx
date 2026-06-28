@@ -369,9 +369,9 @@ export default function AgentPage() {
   const order = ["reasoning-agent", "buy-cheapest", "buy-by-quality"];
 
   return (
-    <div className="relative min-h-screen text-zinc-100">
+    <div className="relative min-h-screen bg-[#050509] text-zinc-100">
       <TopoBackground />
-      <div className="mx-auto max-w-5xl px-5 py-10">
+      <div className="relative z-10 mx-auto max-w-5xl px-5 py-10">
         {/* Header */}
         <header className="mb-6">
           <div className="flex items-baseline gap-2.5">
