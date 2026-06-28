@@ -6,6 +6,7 @@ export interface RateLimitResult {
   remaining: number | null;
   resetAt: string | null;
   failedOpen?: boolean;
+  failedClosed?: boolean;
 }
 
 export interface RunLock {
@@ -14,7 +15,10 @@ export interface RunLock {
   resetAt: string | null;
   lockId: string | null;
   failedOpen?: boolean;
+  failedClosed?: boolean;
 }
+
+type FailureMode = "open" | "closed";
 
 function admin() {
   return createClient(
@@ -42,10 +46,12 @@ export async function consumeRateLimit(opts: {
   limit: number;
   windowSeconds: number;
   cost?: number;
+  failureMode?: FailureMode;
 }): Promise<RateLimitResult> {
   const limit = Math.max(1, Math.floor(opts.limit));
   const windowSeconds = Math.max(1, Math.floor(opts.windowSeconds));
   const cost = Math.max(1, Math.floor(opts.cost ?? 1));
+  const failureMode = opts.failureMode ?? "open";
 
   try {
     const { data, error } = await admin().rpc("consume_rate_limit", {
@@ -62,6 +68,15 @@ export async function consumeRateLimit(opts: {
       resetAt: row?.reset_at ?? null,
     };
   } catch (err) {
+    if (failureMode === "closed") {
+      console.warn("[rate-limit] failing closed:", (err as Error).message);
+      return {
+        allowed: false,
+        remaining: 0,
+        resetAt: retryAt(30),
+        failedClosed: true,
+      };
+    }
     console.warn("[rate-limit] failing open:", (err as Error).message);
     return { allowed: true, remaining: null, resetAt: null, failedOpen: true };
   }
@@ -71,7 +86,9 @@ export async function acquireRunLock(opts: {
   key: string;
   limit: number;
   ttlSeconds: number;
+  failureMode?: FailureMode;
 }): Promise<RunLock> {
+  const failureMode = opts.failureMode ?? "open";
   try {
     const { data, error } = await admin().rpc("try_acquire_run_lock", {
       p_key: opts.key,
@@ -87,6 +104,16 @@ export async function acquireRunLock(opts: {
       lockId: row?.lock_id ?? null,
     };
   } catch (err) {
+    if (failureMode === "closed") {
+      console.warn("[run-lock] failing closed:", (err as Error).message);
+      return {
+        acquired: false,
+        activeCount: null,
+        resetAt: retryAt(30),
+        lockId: null,
+        failedClosed: true,
+      };
+    }
     console.warn("[run-lock] failing open:", (err as Error).message);
     return {
       acquired: true,
@@ -121,4 +148,8 @@ export function rateLimitHeaders(result: Pick<RateLimitResult, "remaining" | "re
 
 export function budgetCostUnits(usdc: number) {
   return Math.max(1, Math.ceil(usdc * 1_000_000));
+}
+
+function retryAt(seconds: number) {
+  return new Date(Date.now() + seconds * 1000).toISOString();
 }

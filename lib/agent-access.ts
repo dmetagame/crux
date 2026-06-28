@@ -103,12 +103,13 @@ async function guardVisitorWalletRun(
     key: limitKey(`${opts.scope}:visitor-hour`, `${walletId}:${ip}`),
     limit: envInt("CRUX_VISITOR_AGENT_HOURLY_LIMIT", 5),
     windowSeconds: 3600,
+    failureMode: "closed",
   });
   if (!hourly.allowed) {
     return {
       ok: false,
-      status: 429,
-      message: "Visitor wallet run limit reached. Try again later.",
+      status: limitedStatus(hourly),
+      message: limitedMessage(hourly, "Visitor wallet run limit reached. Try again later."),
       headers: rateLimitHeaders(hourly),
     };
   }
@@ -118,12 +119,13 @@ async function guardVisitorWalletRun(
     limit: budgetCostUnits(envFloat("CRUX_VISITOR_AGENT_DAILY_BUDGET_USDC", 0.25)),
     windowSeconds: 86400,
     cost: budgetCostUnits(opts.budgetUsdc),
+    failureMode: "closed",
   });
   if (!dailyBudget.allowed) {
     return {
       ok: false,
-      status: 429,
-      message: "Visitor wallet daily budget cap reached. Try again tomorrow.",
+      status: limitedStatus(dailyBudget),
+      message: limitedMessage(dailyBudget, "Visitor wallet daily budget cap reached. Try again tomorrow."),
       headers: rateLimitHeaders(dailyBudget),
     };
   }
@@ -132,12 +134,15 @@ async function guardVisitorWalletRun(
     key: limitKey(`${opts.scope}:visitor-lock`, walletId),
     limit: envInt("CRUX_VISITOR_AGENT_CONCURRENCY", 1),
     ttlSeconds: envInt("CRUX_AGENT_RUN_LOCK_TTL_SECONDS", 120),
+    failureMode: "closed",
   });
   if (!lock.acquired) {
     return {
       ok: false,
-      status: 429,
-      message: "This visitor wallet already has a run in progress.",
+      status: limitedStatus(lock),
+      message: lock.failedClosed
+        ? "Run concurrency controls are temporarily unavailable. Try again shortly."
+        : "This visitor wallet already has a run in progress.",
       headers: lock.resetAt ? { "Retry-After": retryAfter(lock.resetAt) } : undefined,
     };
   }
@@ -187,12 +192,13 @@ async function guardHouseWalletRun(
     key: limitKey(`${opts.scope}:hour`, auth.actorId),
     limit: hourlyLimit,
     windowSeconds: 3600,
+    failureMode: "closed",
   });
   if (!hourly.allowed) {
     return {
       ok: false,
-      status: 429,
-      message: "Agent run rate limit reached. Try again later.",
+      status: limitedStatus(hourly),
+      message: limitedMessage(hourly, "Agent run rate limit reached. Try again later."),
       headers: rateLimitHeaders(hourly),
     };
   }
@@ -206,12 +212,13 @@ async function guardHouseWalletRun(
     limit: budgetCostUnits(dailyBudgetUsdc),
     windowSeconds: 86400,
     cost: budgetCostUnits(opts.budgetUsdc),
+    failureMode: "closed",
   });
   if (!actorBudget.allowed) {
     return {
       ok: false,
-      status: 429,
-      message: "Daily agent budget cap reached for this caller.",
+      status: limitedStatus(actorBudget),
+      message: limitedMessage(actorBudget, "Daily agent budget cap reached for this caller."),
       headers: rateLimitHeaders(actorBudget),
     };
   }
@@ -221,12 +228,13 @@ async function guardHouseWalletRun(
     limit: budgetCostUnits(envFloat("CRUX_HOUSE_AGENT_DAILY_BUDGET_USDC", 0.5)),
     windowSeconds: 86400,
     cost: budgetCostUnits(opts.budgetUsdc),
+    failureMode: "closed",
   });
   if (!globalBudget.allowed) {
     return {
       ok: false,
-      status: 429,
-      message: "Global house-wallet daily budget cap reached.",
+      status: limitedStatus(globalBudget),
+      message: limitedMessage(globalBudget, "Global house-wallet daily budget cap reached."),
       headers: rateLimitHeaders(globalBudget),
     };
   }
@@ -235,12 +243,15 @@ async function guardHouseWalletRun(
     key: "agent:house:global-lock",
     limit: envInt("CRUX_HOUSE_AGENT_CONCURRENCY", 1),
     ttlSeconds: envInt("CRUX_AGENT_RUN_LOCK_TTL_SECONDS", 120),
+    failureMode: "closed",
   });
   if (!lock.acquired) {
     return {
       ok: false,
-      status: 429,
-      message: "Another house-wallet agent run is already in progress.",
+      status: limitedStatus(lock),
+      message: lock.failedClosed
+        ? "Run concurrency controls are temporarily unavailable. Try again shortly."
+        : "Another house-wallet agent run is already in progress.",
       headers: lock.resetAt ? { "Retry-After": retryAfter(lock.resetAt) } : undefined,
     };
   }
@@ -351,4 +362,14 @@ function numberOrUndefined(value: unknown) {
 
 function retryAfter(resetAt: string) {
   return String(Math.max(1, Math.ceil((new Date(resetAt).getTime() - Date.now()) / 1000)));
+}
+
+function limitedStatus(result: { failedClosed?: boolean }) {
+  return result.failedClosed ? 503 : 429;
+}
+
+function limitedMessage(result: { failedClosed?: boolean }, fallback: string) {
+  return result.failedClosed
+    ? "Usage controls are temporarily unavailable. Try again shortly."
+    : fallback;
 }

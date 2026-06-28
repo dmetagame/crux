@@ -277,12 +277,17 @@ async function enforceX402RateLimit(
     key: limitKey(`x402:${phase}`, clientIp(req)),
     limit: phase === "challenge" ? 120 : 180,
     windowSeconds: 60,
+    failureMode: "closed",
   });
 
   if (rate.allowed) return null;
 
   return NextResponse.json(
-    { error: "Too many x402 requests. Try again shortly." },
-    { status: 429, headers: rateLimitHeaders(rate) },
+    {
+      error: rate.failedClosed
+        ? "x402 usage controls are temporarily unavailable. Try again shortly."
+        : "Too many x402 requests. Try again shortly.",
+    },
+    { status: rate.failedClosed ? 503 : 429, headers: rateLimitHeaders(rate) },
   );
 }

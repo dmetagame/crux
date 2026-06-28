@@ -24,11 +24,16 @@ export async function GET(req: NextRequest) {
     key: limitKey("wallet:status", `${walletId}:${clientIp(req)}`),
     limit: 30,
     windowSeconds: 60,
+    failureMode: "closed",
   });
   if (!rate.allowed) {
     return NextResponse.json(
-      { error: "Wallet status limit reached. Try again shortly." },
-      { status: 429, headers: rateLimitHeaders(rate) },
+      {
+        error: rate.failedClosed
+          ? "Wallet status controls are temporarily unavailable. Try again shortly."
+          : "Wallet status limit reached. Try again shortly.",
+      },
+      { status: rate.failedClosed ? 503 : 429, headers: rateLimitHeaders(rate) },
     );
   }
 

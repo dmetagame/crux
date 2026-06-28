@@ -17,11 +17,16 @@ export async function POST(req: NextRequest) {
       key: limitKey("wallet:create", clientIp(req)),
       limit: 3,
       windowSeconds: 3600,
+      failureMode: "closed",
     });
     if (!rate.allowed) {
       return NextResponse.json(
-        { error: "Wallet creation limit reached. Try again later." },
-        { status: 429, headers: rateLimitHeaders(rate) },
+        {
+          error: rate.failedClosed
+            ? "Wallet creation controls are temporarily unavailable. Try again shortly."
+            : "Wallet creation limit reached. Try again later.",
+        },
+        { status: rate.failedClosed ? 503 : 429, headers: rateLimitHeaders(rate) },
       );
     }
 
