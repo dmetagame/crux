@@ -33,19 +33,29 @@ export function createNdjsonWriter(
     }
   };
 
-  const heartbeat =
+  let heartbeat: ReturnType<typeof setInterval> | null =
     heartbeatMs > 0
       ? setInterval(() => {
           send({ type: "heartbeat", at: new Date().toISOString() });
         }, heartbeatMs)
       : null;
 
+  const stopHeartbeat = () => {
+    if (!heartbeat) return;
+    clearInterval(heartbeat);
+    heartbeat = null;
+  };
+
   send({ type: "heartbeat", at: new Date().toISOString() });
 
   return {
-    send,
+    send: (obj: unknown) => {
+      const type = typeof obj === "object" && obj !== null ? (obj as { type?: unknown }).type : null;
+      if (type === "done" || type === "error") stopHeartbeat();
+      return send(obj);
+    },
     close: () => {
-      if (heartbeat) clearInterval(heartbeat);
+      stopHeartbeat();
       if (closed) return;
       closed = true;
       try {
