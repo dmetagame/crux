@@ -27,6 +27,10 @@ export async function GET(req: NextRequest) {
       description:
         "Payment-native research data and demo agent runners. x402-paid resources are the primary external-agent surface.",
     },
+    externalDocs: {
+      description: "Live Crux agent integration guide",
+      url: `${origin}/agents`,
+    },
     servers: [{ url: origin }],
     security: [],
     paths: {

@@ -465,18 +465,27 @@ function AgentPageContent() {
       <TopoBackground />
       <div className="relative z-10 mx-auto max-w-5xl px-5 py-10">
         {/* Header */}
-        <header className="mb-6">
-          <div className="flex items-baseline gap-2.5">
-            <h1 className="bg-gradient-to-r from-violet-200 via-violet-100 to-teal-200 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
-              Crux
-            </h1>
-            <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">paying research agent</span>
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-baseline gap-2.5">
+              <h1 className="bg-gradient-to-r from-violet-200 via-violet-100 to-teal-200 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+                Crux
+              </h1>
+              <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">paying research agent</span>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm text-zinc-400">
+              Crux decides what information is worth buying about a subject, under a strict USDC budget, and pays for each
+              source with real nanopayments that settle on Arc. The spending{" "}
+              <span className="text-zinc-200">judgment</span> is the product.
+            </p>
           </div>
-          <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Crux decides what information is worth buying about a subject, under a strict USDC budget, and pays for each
-            source with real nanopayments that settle on Arc. The spending{" "}
-            <span className="text-zinc-200">judgment</span> is the product.
-          </p>
+          <a
+            href="/agents"
+            className="inline-flex w-fit items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/55 px-3 py-1.5 text-xs font-medium text-zinc-300 backdrop-blur-sm hover:border-teal-500/60 hover:text-teal-300"
+          >
+            Agent API
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
         </header>
 
         {/* Live traction counter */}

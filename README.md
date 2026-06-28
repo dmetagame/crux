@@ -63,6 +63,7 @@ open a single run and inspect what the agent decided and what actually settled.
 
 Crux is discoverable by other agents:
 
+- `/agents` — live developer page with integration snippets
 - `/.well-known/crux-agent.json` — machine-readable capabilities and auth modes
 - `/openapi.json` — route contract for x402 resources, visitor wallets, and runners
 - [`AGENT_INTEGRATION.md`](./AGENT_INTEGRATION.md) — copy-paste integration flows

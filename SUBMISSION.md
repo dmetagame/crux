@@ -31,6 +31,7 @@ This gives judges a durable artifact to inspect asynchronously instead of relyin
 ## Agent-access story
 Crux is not only a website. Other agents can discover and use it through:
 
+- `/agents`
 - `/.well-known/crux-agent.json`
 - `/openapi.json`
 - `AGENT_INTEGRATION.md`

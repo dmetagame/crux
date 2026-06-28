@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
     description:
       "Payment-native research data and autonomous research runners over x402 on Arc Testnet.",
     homepage: `${origin}/agent`,
+    developerDocs: `${origin}/agents`,
     openapi: `${origin}/openapi.json`,
     integrationGuide: "https://github.com/dmetagame/crux/blob/main/AGENT_INTEGRATION.md",
     demoRunbook: "https://github.com/dmetagame/crux/blob/main/DEMO.md",
