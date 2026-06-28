@@ -14,8 +14,8 @@ const DEFAULT_DEDUPE_MS = 5 * 60 * 1000;
 const sentAtByKey = new Map<string, number>();
 
 export async function sendOperationalAlert(payload: AlertPayload) {
-  const webhookUrl = process.env.CRUX_ALERT_WEBHOOK_URL?.trim();
-  if (!webhookUrl) return;
+  const webhookUrls = alertWebhookUrls();
+  if (webhookUrls.length === 0) return;
 
   const dedupeKey = payload.dedupeKey ?? `${payload.event}:${payload.summary}`;
   const now = Date.now();
@@ -35,6 +35,21 @@ export async function sendOperationalAlert(payload: AlertPayload) {
     timestamp: new Date().toISOString(),
   };
 
+  await Promise.all(webhookUrls.map((webhookUrl) => postAlert(webhookUrl, body)));
+}
+
+export function alertErrorMessage(err: unknown) {
+  return redact(err instanceof Error ? err.message : String(err));
+}
+
+function alertWebhookUrls() {
+  return (process.env.CRUX_ALERT_WEBHOOK_URL ?? "")
+    .split(/[\s,]+/)
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+async function postAlert(webhookUrl: string, body: Record<string, unknown>) {
   try {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -55,10 +70,6 @@ export async function sendOperationalAlert(payload: AlertPayload) {
   } catch (err) {
     console.warn("[alert] webhook error:", (err as Error).message);
   }
-}
-
-export function alertErrorMessage(err: unknown) {
-  return redact(err instanceof Error ? err.message : String(err));
 }
 
 function sanitizeDetails(details: Record<string, unknown>) {

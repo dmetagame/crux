@@ -174,8 +174,10 @@ agent topics, and public agent budget guard. Override the target with
 - Set `CRUX_ALERT_WEBHOOK_URL` in production to receive operational alerts for
   x402 settlement failures, payment ledger write failures, rate-limit/run-lock
   fail-closed events, and agent/receipt failures.
+- To notify more than one destination, set `CRUX_ALERT_WEBHOOK_URL` to a
+  comma- or newline-separated list of webhook URLs.
 - `CRUX_ALERT_WEBHOOK_TOKEN` is optional; when set, Crux sends it as an
-  `Authorization: Bearer ...` header for custom alert receivers.
+  `Authorization: Bearer ...` header to every configured destination.
 - Alerts are best-effort, time-bounded, deduped in-process, and redact private
   keys, bearer tokens, JWT-like tokens, and raw payment payloads.
 
