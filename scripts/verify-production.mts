@@ -95,6 +95,32 @@ const checks: Check[] = [
     },
   },
   {
+    name: "admin login page",
+    path: "/admin/login",
+    expect: (res, body) => {
+      expectStatus(res, 200);
+      if (!body.includes("Admin dashboard")) {
+        throw new Error("expected admin dashboard login page");
+      }
+    },
+  },
+  {
+    name: "admin dashboard auth redirect",
+    path: "/dashboard",
+    init: {
+      redirect: "manual",
+    },
+    expect: (res) => {
+      if (![307, 308].includes(res.status)) {
+        throw new Error(`expected dashboard redirect, got ${res.status}`);
+      }
+      const location = res.headers.get("location") ?? "";
+      if (!location.endsWith("/admin/login")) {
+        throw new Error(`expected redirect to /admin/login, got ${location}`);
+      }
+    },
+  },
+  {
     name: "payment reconciliation auth guard",
     path: "/api/admin/reconcile-payments",
     expect: (res, body) => {

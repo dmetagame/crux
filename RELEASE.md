@@ -58,6 +58,9 @@ production Supabase env vars are loaded:
 npm run reconcile:payments -- --dry-run
 ```
 
+If enabling or rotating the seller dashboard, set `ADMIN_SESSION_SECRET` and
+prefer `ADMIN_PASSWORD_SHA256` over plaintext `ADMIN_PASSWORD`, then redeploy.
+
 Run the smoke check:
 
 ```bash

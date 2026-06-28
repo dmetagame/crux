@@ -18,36 +18,87 @@
 
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { sendOperationalAlert } from "@/lib/alerts";
 import {
   ADMIN_SESSION_COOKIE,
-  adminLoginCredentials,
-  adminSessionToken,
+  adminSessionCookieOptions,
+  createAdminSessionCookie,
+  isAdminLogin,
   isAdminConfigured,
+  normalizeEmail,
 } from "@/lib/admin-auth";
+import {
+  clientIpFromHeaders,
+  consumeRateLimit,
+  limitKey,
+} from "@/lib/rate-limit";
 
-export async function login(formData: FormData) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  const admin = adminLoginCredentials();
+export type LoginState = {
+  error?: string;
+};
+
+export async function login(
+  _state: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const email = String(formData.get("email") ?? "");
+  const password = String(formData.get("password") ?? "");
 
   if (!isAdminConfigured()) {
     return { error: "Admin dashboard is not configured" };
   }
 
-  if (email !== admin.email || password !== admin.password) {
+  const requestHeaders = await headers();
+  const ip = clientIpFromHeaders(requestHeaders);
+  const normalizedEmail = normalizeEmail(email);
+  const [ipRate, emailRate] = await Promise.all([
+    consumeRateLimit({
+      key: limitKey("admin:login:ip", ip),
+      limit: 12,
+      windowSeconds: 10 * 60,
+      failureMode: "closed",
+    }),
+    consumeRateLimit({
+      key: limitKey("admin:login:email", normalizedEmail || ip),
+      limit: 6,
+      windowSeconds: 10 * 60,
+      failureMode: "closed",
+    }),
+  ]);
+
+  if (!ipRate.allowed || !emailRate.allowed) {
+    void sendOperationalAlert({
+      event: "admin_login_rate_limited",
+      severity: "warning",
+      title: "Admin login rate limited",
+      summary: "Admin login attempts exceeded the configured rate limit.",
+      details: {
+        ipLimited: !ipRate.allowed,
+        emailLimited: !emailRate.allowed,
+        failedClosed: Boolean(ipRate.failedClosed || emailRate.failedClosed),
+      },
+      dedupeKey: "admin-login-rate-limited",
+      dedupeMs: 10 * 60 * 1000,
+    });
+    return {
+      error: ipRate.failedClosed || emailRate.failedClosed
+        ? "Admin login controls are temporarily unavailable. Try again shortly."
+        : "Too many login attempts. Try again shortly.",
+    };
+  }
+
+  if (!(await isAdminLogin(email, password))) {
     return { error: "Invalid credentials" };
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ADMIN_SESSION_COOKIE, adminSessionToken(), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    path: "/",
-    maxAge: 60 * 60 * 24, // 1 day
-  });
+  cookieStore.set(
+    ADMIN_SESSION_COOKIE,
+    await createAdminSessionCookie(),
+    adminSessionCookieOptions(),
+  );
 
   redirect("/dashboard");
 }

@@ -29,10 +29,14 @@ function admin() {
 }
 
 export function clientIp(req: Request) {
-  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return clientIpFromHeaders(req.headers);
+}
+
+export function clientIpFromHeaders(headers: Pick<Headers, "get">) {
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   return (
-    req.headers.get("cf-connecting-ip")?.trim() ||
-    req.headers.get("x-real-ip")?.trim() ||
+    headers.get("cf-connecting-ip")?.trim() ||
+    headers.get("x-real-ip")?.trim() ||
     forwarded ||
     "unknown"
   );

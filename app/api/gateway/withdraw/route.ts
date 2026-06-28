@@ -23,7 +23,11 @@ import {
   GATEWAY_DOMAINS,
 } from "@circle-fin/x402-batching/client";
 import { createClient } from "@supabase/supabase-js";
-import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
+import {
+  ADMIN_SESSION_COOKIE,
+  isAdminSession,
+  isSameOriginAdminMutation,
+} from "@/lib/admin-auth";
 import { requireSellerPrivateKey } from "@/lib/wallet-keys";
 
 const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
@@ -42,8 +46,11 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
-  if (!isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
+  if (!(await isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isSameOriginAdminMutation(req)) {
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   }
 
   let privateKey: `0x${string}`;

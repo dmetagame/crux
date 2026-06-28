@@ -19,17 +19,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ADMIN_SESSION_COOKIE, isAdminSession } from "@/lib/admin-auth";
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const session = request.cookies.get(ADMIN_SESSION_COOKIE)?.value;
   const { pathname } = request.nextUrl;
-  const authed = isAdminSession(session);
+  const authed = await isAdminSession(session);
   const adminRoute =
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/api/gateway/") ||
     pathname.startsWith("/api/dashboard/");
 
-  // Logged-in user trying to access sign-in page -> redirect to dashboard
-  if (pathname === "/" && authed) {
+  // Logged-in user trying to access sign-in page -> redirect to dashboard.
+  if (pathname === "/admin/login" && authed) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -41,14 +41,14 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Logged-out user trying to access protected routes -> redirect to the public app
+  // Logged-out user trying to access protected pages -> redirect to admin login.
   if (adminRoute && !authed) {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/admin/login", request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*", "/api/gateway/:path*", "/api/dashboard/:path*"],
+  matcher: ["/admin/login", "/dashboard/:path*", "/api/gateway/:path*", "/api/dashboard/:path*"],
 };

@@ -171,6 +171,12 @@ agent topics, and public agent budget guard. Override the target with
   `npm run verify:production`. Do not reuse hackathon demo keys for mainnet.
 
 ### Operations
+- The seller dashboard lives at `/admin/login` and remains disabled unless
+  `ADMIN_EMAIL`, either `ADMIN_PASSWORD` or `ADMIN_PASSWORD_SHA256`, and
+  `ADMIN_SESSION_SECRET` are configured. Production sessions are signed,
+  12-hour, HTTP-only, same-site cookies. Prefer `ADMIN_PASSWORD_SHA256` for
+  production; generate it with
+  `node -e "crypto=require('crypto'); console.log(crypto.createHash('sha256').update(process.argv[1]).digest('hex'))" 'your-password'`.
 - Set `CRUX_ALERT_WEBHOOK_URL` in production to receive operational alerts for
   x402 settlement failures, payment ledger write failures, rate-limit/run-lock
   fail-closed events, and agent/receipt failures.

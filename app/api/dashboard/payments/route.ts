@@ -9,7 +9,7 @@ import {
 export const maxDuration = 15;
 
 export async function GET(req: NextRequest) {
-  if (!isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value)) {
+  if (!(await isAdminSession(req.cookies.get(ADMIN_SESSION_COOKIE)?.value))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
