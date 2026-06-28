@@ -125,6 +125,14 @@ function pretty(id: string) {
   return id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function newIdempotencyKey(prefix: string) {
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${id}`;
+}
+
 async function saveComparisonReceipt(
   topic: string,
   results: Record<string, Done>,
@@ -280,12 +288,13 @@ export default function AgentPage() {
     resetRun();
     setRealResult(null);
     const walletParam = useOwnWallet ? `&walletId=${wallet!.walletId}` : "";
+    const idempotencyParam = `&idempotencyKey=${encodeURIComponent(newIdempotencyKey("real"))}`;
     const init = useOwnWallet
       ? { headers: { "X-Crux-Wallet-Token": wallet!.walletToken } }
       : undefined;
     try {
       await streamNDJSON(
-        `/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}`,
+        `/api/agent/real?subject=${encodeURIComponent(subj)}&budget=${REAL_BUDGET}${walletParam}${idempotencyParam}`,
         (o) => {
           if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
           else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
@@ -309,8 +318,9 @@ export default function AgentPage() {
     setCompare({});
     setCompareReceipt(null);
     setActive(null);
+    const idempotencyParam = `&idempotencyKey=${encodeURIComponent(newIdempotencyKey("benchmark"))}`;
     try {
-      await streamNDJSON(`/api/agent/run?topic=${encodeURIComponent(topic)}&budget=${BUDGET}`, (o) => {
+      await streamNDJSON(`/api/agent/run?topic=${encodeURIComponent(topic)}&budget=${BUDGET}${idempotencyParam}`, (o) => {
         if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
         else if (o.type === "done") setResult({ result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
         else if (o.type === "error") setErr(o.message);
@@ -334,7 +344,10 @@ export default function AgentPage() {
     const comparison: Record<string, Done> = {};
     const comparisonEvents: { label?: string; ev: AgentEvent }[] = [];
     const steps = [
-      { label: "reasoning-agent", url: `/api/agent/run?topic=${enc}&budget=${BUDGET}` },
+      {
+        label: "reasoning-agent",
+        url: `/api/agent/run?topic=${enc}&budget=${BUDGET}&idempotencyKey=${encodeURIComponent(newIdempotencyKey("compare-agent"))}`,
+      },
       { label: "buy-cheapest", url: `/api/agent/baseline?strategy=cheapest&topic=${enc}&budget=${BUDGET}` },
       { label: "buy-by-quality", url: `/api/agent/baseline?strategy=quality&topic=${enc}&budget=${BUDGET}` },
     ];

@@ -3,7 +3,15 @@ export function ndjsonError(
   status = 400,
   headers: Record<string, string> = {},
 ) {
-  return new Response(JSON.stringify({ type: "error", message }) + "\n", {
+  return ndjsonResponse({ type: "error", message }, status, headers);
+}
+
+export function ndjsonResponse(
+  obj: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+) {
+  return new Response(JSON.stringify(obj) + "\n", {
     status,
     headers: {
       "Content-Type": "application/x-ndjson; charset=utf-8",

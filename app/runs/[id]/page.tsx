@@ -48,7 +48,7 @@ const SOURCE_NAMES = new Map([
 
 export default function RunReceiptPage(props: ReceiptPageProps) {
   return (
-    <main className="relative min-h-screen text-zinc-100">
+    <main className="relative min-h-screen bg-[#050509] text-zinc-100">
       <TopoBackground />
       <Suspense fallback={<ReceiptLoading />}>
         <RunReceiptContent {...props} />
@@ -87,7 +87,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const catalog = receipt.mode === "real" ? REAL_SOURCES : SOURCES;
 
   return (
-      <div className="mx-auto max-w-5xl px-5 py-10">
+      <div className="relative z-10 mx-auto max-w-5xl px-5 py-10">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
             <Link href="/agent" className="text-xs text-zinc-500 hover:text-teal-300">
@@ -97,6 +97,17 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
               <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">Run receipt</h1>
               <span className="rounded bg-teal-500/10 px-2 py-1 text-xs font-medium text-teal-300">
                 {isComparison ? "benchmark comparison" : receipt.mode === "real" ? "real subject" : "scored benchmark"}
+              </span>
+              <span
+                className={`rounded px-2 py-1 text-xs font-medium ${
+                  receipt.status === "completed"
+                    ? "bg-emerald-500/10 text-emerald-300"
+                    : receipt.status === "failed"
+                      ? "bg-red-500/10 text-red-300"
+                      : "bg-amber-500/10 text-amber-300"
+                }`}
+              >
+                {receipt.status}
               </span>
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
@@ -117,6 +128,20 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
           <Stat label="payer" value={receipt.payerKind === "visitor-wallet" ? "visitor" : "house"} />
           <Stat label="model" value={receipt.model?.replace("anthropic/", "") ?? "unknown"} />
         </section>
+
+        {receipt.status !== "completed" && (
+          <section
+            className={`mt-5 rounded-lg border p-4 text-sm ${
+              receipt.status === "failed"
+                ? "border-red-900 bg-red-950/45 text-red-200"
+                : "border-amber-900 bg-amber-950/35 text-amber-100"
+            }`}
+          >
+            {receipt.status === "failed"
+              ? receipt.error ?? "This run failed before it produced a final result."
+              : "This run is still marked running. If it does not complete, retry with a new Idempotency-Key."}
+          </section>
+        )}
 
         {comparisonRows.length > 0 && <ComparisonSummary rows={comparisonRows} />}
 

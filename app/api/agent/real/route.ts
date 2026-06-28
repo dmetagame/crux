@@ -1,7 +1,14 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
 import { guardAgentRun } from "@/lib/agent-access";
-import { createNdjsonWriter, ndjsonError } from "@/lib/ndjson";
-import { saveRunReceipt } from "@/lib/run-receipts";
+import { createNdjsonWriter, ndjsonError, ndjsonResponse } from "@/lib/ndjson";
+import { agentIdempotencyScope, requestIdempotencyKey } from "@/lib/run-idempotency";
+import { replayRunReceipt, runReceiptUrl } from "@/lib/run-replay";
+import {
+  completeRunReceipt,
+  failRunReceipt,
+  getRunReceiptByIdempotencyKey,
+  startRunReceipt,
+} from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
 
 export const maxDuration = 60;
@@ -25,6 +32,21 @@ export async function GET(req: Request) {
   const walletId = url.searchParams.get("walletId")?.trim() || null;
   const walletToken = req.headers.get("x-crux-wallet-token")?.trim() || null;
   const baseUrl = url.origin;
+  const idempotencyKey = requestIdempotencyKey(req, url);
+  const idempotencyScope = agentIdempotencyScope(req, "agent:real", {
+    visitorWalletId: walletId,
+  });
+
+  if (idempotencyKey) {
+    const existing = await getRunReceiptByIdempotencyKey(idempotencyScope, idempotencyKey);
+    if (existing) {
+      const replay = replayRunReceipt(existing, url.origin);
+      return ndjsonResponse(replay.body, replay.status, {
+        "Idempotency-Replayed": "true",
+        Location: runReceiptUrl(url.origin, existing.id),
+      });
+    }
+  }
 
   let visitorWallet: { key: `0x${string}`; address: string } | null = null;
   if (walletId) {
@@ -43,10 +65,46 @@ export async function GET(req: Request) {
   });
   if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
 
+  const payerKind = walletId ? "visitor-wallet" : "house-wallet";
+  let run;
+  try {
+    run = await startRunReceipt({
+      mode: "real",
+      subject,
+      model,
+      budgetUsdc: budget,
+      payerKind,
+      idempotencyScope,
+      idempotencyKey,
+      payload: {
+        status: "running",
+        route: "agent:real",
+        params: {
+          subject,
+          model,
+          budget,
+          wallet: walletId ? "visitor-wallet" : "house-wallet",
+        },
+      },
+    });
+  } catch (err) {
+    await guard.release();
+    return ndjsonError((err as Error).message, 500);
+  }
+  if (run.replay && run.receipt) {
+    await guard.release();
+    const replay = replayRunReceipt(run.receipt, url.origin);
+    return ndjsonResponse(replay.body, replay.status, {
+      "Idempotency-Replayed": "true",
+      Location: runReceiptUrl(url.origin, run.receipt.id),
+    });
+  }
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const { send, close } = createNdjsonWriter(controller);
       const events: unknown[] = [];
+      let spentUsdc = 0;
       try {
         let buyerKey: `0x${string}` | undefined;
         if (walletId) {
@@ -67,15 +125,16 @@ export async function GET(req: Request) {
             send({ type: "event", event: e });
           },
         });
+        spentUsdc = result.spent;
         let receiptId: string | null = null;
         try {
-          receiptId = await saveRunReceipt({
+          receiptId = await completeRunReceipt(run.id, {
             mode: "real",
             subject,
             model,
             budgetUsdc: budget,
             spentUsdc: result.spent,
-            payerKind: walletId ? "visitor-wallet" : "house-wallet",
+            payerKind,
             payload: { result, events, budget, walletId: walletId ? "visitor-wallet" : null },
           });
         } catch (receiptErr) {
@@ -95,6 +154,29 @@ export async function GET(req: Request) {
           message =
             "This wallet isn't funded yet. Send it 20 USDC + native gas at " +
             "faucet.circle.com (Arc testnet), wait for it to land, then run again.";
+        }
+        try {
+          await failRunReceipt(
+            run.id,
+            {
+              mode: "real",
+              subject,
+              model,
+              budgetUsdc: budget,
+              spentUsdc,
+              payerKind,
+              payload: {
+                status: "failed",
+                events,
+                budget,
+                walletId: walletId ? "visitor-wallet" : null,
+                error: message,
+              },
+            },
+            message,
+          );
+        } catch (receiptErr) {
+          console.error("[receipt] fail update failed:", (receiptErr as Error).message);
         }
         send({ type: "error", message });
       } finally {

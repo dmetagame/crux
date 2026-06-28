@@ -111,8 +111,19 @@ function runnerTool(scope: string, summary: string) {
     get: {
       summary,
       security: [{ CruxAgentKey: [] }],
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: false,
+          schema: { type: "string", maxLength: 200 },
+          description:
+            "Recommended for retries. Reusing the same key for the same caller returns the existing running/completed/failed run instead of spending again.",
+        },
+      ],
       responses: {
         "200": { description: "NDJSON stream of events and final result" },
+        "409": { description: "A run with this Idempotency-Key is already in progress" },
         "401": { description: "Invalid or disabled API key when supplied" },
         "429": { description: "Rate, budget, or concurrency cap reached" },
       },
@@ -120,6 +131,8 @@ function runnerTool(scope: string, summary: string) {
         scope,
         contentType: "application/x-ndjson",
         publicDemoAccess: true,
+        idempotency:
+          "Send Idempotency-Key on retried agent-run requests to avoid duplicate spend.",
         note: "Public demo access is tightly capped because this route can spend the house wallet.",
       },
     },

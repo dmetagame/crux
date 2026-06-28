@@ -35,5 +35,11 @@ export async function GET(req: NextRequest) {
       houseWalletRunners: "public capped demo access or Authorization: Bearer <Crux agent key>",
       visitorWallets: "walletId plus X-Crux-Wallet-Token header",
     },
+    idempotency: {
+      header: "Idempotency-Key",
+      appliesTo: ["/api/agent/real", "/api/agent/run"],
+      behavior:
+        "Retries with the same key and caller receive the existing running/completed/failed run instead of spending again.",
+    },
   });
 }
