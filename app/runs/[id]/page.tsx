@@ -186,7 +186,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-zinc-950/40 text-left text-xs text-zinc-500">
                 <tr>
                   <th className="px-4 py-2 font-medium">Source</th>
@@ -302,7 +302,7 @@ function ComparisonSummary({ rows }: { rows: ComparisonRow[] }) {
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Agent vs baselines</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-zinc-950/40 text-left text-xs text-zinc-500">
             <tr>
               <th className="px-4 py-2 font-medium">Strategy</th>

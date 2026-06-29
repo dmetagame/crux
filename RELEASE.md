@@ -58,6 +58,9 @@ production Supabase env vars are loaded:
 npm run reconcile:payments -- --dry-run
 ```
 
+Confirm `CRON_SECRET` is set in production; `/api/admin/reconcile-payments`
+requires `Authorization: Bearer $CRON_SECRET` or `CRUX_MAINTENANCE_TOKEN`.
+
 If enabling or rotating the seller dashboard, set `ADMIN_SESSION_SECRET` and
 prefer `ADMIN_PASSWORD_SHA256` over plaintext `ADMIN_PASSWORD`, then redeploy.
 

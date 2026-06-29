@@ -16,8 +16,6 @@ import {
 
 export const maxDuration = 60;
 
-const VERCEL_CRON_SCHEDULE = "0 3 * * *";
-
 export async function GET(req: NextRequest) {
   const authMode = authorizeReconciliation(req);
   if (!authMode) {
@@ -27,29 +25,27 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  if (authMode === "vercel-cron") {
-    const rate = await consumeRateLimit({
-      key: limitKey("admin:reconcile-payments", clientIp(req)),
-      limit: 4,
-      windowSeconds: 60 * 60,
-      failureMode: "closed",
-    });
-    if (!rate.allowed) {
-      return NextResponse.json(
-        {
-          error: rate.failedClosed
-            ? "Reconciliation usage controls are temporarily unavailable."
-            : "Too many reconciliation requests.",
+  const rate = await consumeRateLimit({
+    key: limitKey(`admin:reconcile-payments:${authMode}`, clientIp(req)),
+    limit: 12,
+    windowSeconds: 60 * 60,
+    failureMode: "closed",
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      {
+        error: rate.failedClosed
+          ? "Reconciliation usage controls are temporarily unavailable."
+          : "Too many reconciliation requests.",
+      },
+      {
+        status: rate.failedClosed ? 503 : 429,
+        headers: {
+          ...rateLimitHeaders(rate),
+          "Cache-Control": "no-store",
         },
-        {
-          status: rate.failedClosed ? 503 : 429,
-          headers: {
-            ...rateLimitHeaders(rate),
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
+      },
+    );
   }
 
   const url = new URL(req.url);
@@ -128,7 +124,6 @@ export async function GET(req: NextRequest) {
 function authorizeReconciliation(req: NextRequest) {
   if (isMaintenanceAuthorized(req)) return "maintenance";
   if (isCronSecretAuthorized(req)) return "cron-secret";
-  if (isVercelCron(req)) return "vercel-cron";
   return null;
 }
 
@@ -141,15 +136,6 @@ function isCronSecretAuthorized(req: NextRequest) {
     "";
   if (!supplied) return false;
   return safeEqualHex(sha256Hex(supplied), sha256Hex(expected));
-}
-
-function isVercelCron(req: NextRequest) {
-  const userAgent = req.headers.get("user-agent") ?? "";
-  const schedule = req.headers.get("x-vercel-cron-schedule") ?? "";
-  return (
-    userAgent.includes("vercel-cron/1.0") &&
-    schedule === VERCEL_CRON_SCHEDULE
-  );
 }
 
 function readNumber(value: string | null) {

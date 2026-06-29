@@ -82,15 +82,15 @@ const checks: Check[] = [
     },
   },
   {
-    name: "agent budget guard",
+    name: "public agent runner disabled",
     path: "/api/agent/run?budget=999",
     expect: (res, body) => {
       if (res.status === 503) {
         throw new Error("agent access controls are unavailable");
       }
-      expectStatus(res, 400);
-      if (!body.includes("Budget cap is 0.050 USDC")) {
-        throw new Error("expected public budget cap error");
+      expectStatus(res, 401);
+      if (!body.includes("Public house-wallet runs are disabled")) {
+        throw new Error("expected public house-wallet disabled error");
       }
     },
   },

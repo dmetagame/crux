@@ -58,12 +58,13 @@ function admin() {
 }
 
 function mapReceipt(row: any): RunReceipt {
+  const status = row.status ?? "completed";
   return {
     id: row.id,
     createdAt: row.created_at,
     startedAt: row.started_at ?? null,
-    completedAt: row.completed_at ?? null,
-    status: row.status ?? "completed",
+    completedAt: row.completed_at ?? (status === "completed" ? row.created_at : null),
+    status,
     error: row.error ?? null,
     mode: row.mode,
     subject: row.subject,
@@ -76,7 +77,8 @@ function mapReceipt(row: any): RunReceipt {
 }
 
 export async function saveRunReceipt(input: SaveRunReceiptInput): Promise<string> {
-  const { data, error } = await admin()
+  const completedAt = new Date().toISOString();
+  let { data, error } = await admin()
     .from("run_receipts")
     .insert({
       mode: input.mode,
@@ -86,11 +88,34 @@ export async function saveRunReceipt(input: SaveRunReceiptInput): Promise<string
       spent_usdc: input.spentUsdc,
       payer_kind: input.payerKind,
       payload: input.payload,
+      status: "completed",
+      started_at: completedAt,
+      completed_at: completedAt,
+      error: null,
     })
     .select("id")
     .single();
 
+  if (error && isRunStateColumnError(error.message)) {
+    const fallback = await admin()
+      .from("run_receipts")
+      .insert({
+        mode: input.mode,
+        subject: input.subject,
+        model: input.model ?? null,
+        budget_usdc: input.budgetUsdc,
+        spent_usdc: input.spentUsdc,
+        payer_kind: input.payerKind,
+        payload: input.payload,
+      })
+      .select("id")
+      .single();
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error) throw new Error(`Could not save run receipt: ${error.message}`);
+  if (!data) throw new Error("Could not save run receipt: empty database response");
   return data.id as string;
 }
 

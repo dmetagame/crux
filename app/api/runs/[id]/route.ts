@@ -33,9 +33,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 function toRunStatus(receipt: RunReceipt, requestUrl: string) {
   const payload = receipt.payload ?? {};
-  const result = recordValue(payload.result);
-  const score = recordValue(payload.score);
-  const events = Array.isArray(payload.events) ? payload.events : [];
+  const isComparison = payload.kind === "comparison";
+  const agentDone = isComparison
+    ? recordValue(recordValue(payload.results)?.["reasoning-agent"])
+    : null;
+  const result = isComparison ? recordValue(agentDone?.result) : recordValue(payload.result);
+  const score = isComparison ? recordValue(agentDone?.score) : recordValue(payload.score);
+  const events = isComparison
+    ? arrayValue(payload.events)
+        .map((event) => {
+          const row = recordValue(event);
+          return row?.label === "reasoning-agent" ? row.ev : null;
+        })
+        .filter(Boolean)
+    : arrayValue(payload.events);
 
   return {
     id: receipt.id,
@@ -56,9 +67,14 @@ function toRunStatus(receipt: RunReceipt, requestUrl: string) {
     result,
     score,
     events,
+    comparison: isComparison ? recordValue(payload.results) : null,
   };
 }
 
-function recordValue(value: unknown) {
+function recordValue(value: unknown): Record<string, any> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function arrayValue(value: unknown) {
+  return Array.isArray(value) ? value : [];
 }

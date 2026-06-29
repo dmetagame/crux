@@ -216,9 +216,12 @@ agent topics, and public agent budget guard. Override the target with
   if you want 30-minute checks). It scans recent `payment_events`, refreshes
   stale settlement proof columns, re-verifies Arc transaction hashes, and alerts
   if settlement records are missing, stale, failed, or inconsistent.
+- Set `CRON_SECRET` in Vercel production for the reconciliation route. Crux does
+  not trust cron user-agent headers; reconciliation requires either
+  `Authorization: Bearer $CRON_SECRET` or `CRUX_MAINTENANCE_TOKEN`.
 - Manual reconciliation can run locally with Supabase env vars loaded:
   `npm run reconcile:payments -- --dry-run`, or against the deployed route with
-  `Authorization: Bearer $CRON_SECRET` if `CRON_SECRET` is configured.
+  `Authorization: Bearer $CRON_SECRET`.
 - Keep `CRUX_PUBLIC_AGENT_RUNS_ENABLED=false` in production. The web demo uses
   admin/operator sessions for house-wallet runs, visitor mode uses funded visitor
   wallets, and trusted external agents use scoped Bearer keys.
