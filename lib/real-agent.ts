@@ -79,7 +79,7 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
     }),
     purchase: tool({
       description:
-        "Pay for a source with REAL USDC (settles on Arc, irreversible). Give a one-line rationale. Refused if it " +
+        "Pay for a source with REAL USDC (Gateway-settled on Arc, irreversible). Give a one-line rationale. Refused if it " +
         "would exceed budget. A source may return delivered:false (no data for this subject) even though payment " +
         "settles — that risk is yours; don't blindly re-buy.",
       inputSchema: z.object({

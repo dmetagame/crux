@@ -1,12 +1,12 @@
 # Crux — Autonomous Paying Research Agent
 
 > Crux decides what information is worth buying about a company, under a strict
-> USDC budget, paying for each source with real nanopayments that settle on
+> USDC budget, paying for each source with real Circle Gateway nanopayments on
 > **Arc**. The spending **judgment** is the product — not the report.
 
 Entry for **RFB-01 (Autonomous Paying Agents)** of the Lepton Agents Hackathon
 (Canteen × Circle on Arc). Every purchase below is a real x402 nanopayment that
-settles on Arc testnet through Circle Gateway batching.
+is verified through Circle Gateway and batch-settled on Arc testnet.
 
 ---
 
@@ -109,7 +109,7 @@ scoped Crux agent key.
 - **Baselines** (`lib/baseline.ts`): non-LLM buy-cheapest / buy-by-quality buyers
   for the comparison.
 
-## Everything settles on Arc
+## Settlement Proof On Arc
 
 - Network: **Arc testnet** (`eip155:5042002`), RPC `https://rpc.testnet.arc.network`
 - USDC: `0x3600000000000000000000000000000000000000`; Circle Gateway batching
@@ -176,8 +176,8 @@ agent topics, and public agent budget guard. Override the target with
 - Seller testnet wallet: receives x402 payments and is used only for Gateway
   admin withdrawals. Keep `CRUX_SELLER_TESTNET_PRIVATE_KEY` out of preview/dev
   environments unless withdrawal testing is needed.
-- House testnet wallet: funds capped public/agent runs. Keep its Gateway balance
-  small and rotate it independently from the seller wallet.
+- House testnet wallet: funds capped operator and trusted-agent runs. Keep its
+  Gateway balance small and rotate it independently from the seller wallet.
 - `CRUX_KEY_SCOPE` must stay `arc-testnet`, `testnet`, or `demo`; the app refuses
   to use private keys when this scope is changed to a production-like value.
 - Visitor-wallet private keys are encrypted before storage when
@@ -225,6 +225,9 @@ agent topics, and public agent budget guard. Override the target with
 - Manual reconciliation can run locally with Supabase env vars loaded:
   `npm run reconcile:payments -- --dry-run`, or against the deployed route with
   `Authorization: Bearer $CRON_SECRET`.
+- Before submission windows or demos, run `npm run check:fuel` with production
+  wallet env loaded. It prints house/seller public addresses plus on-chain and
+  Gateway USDC balances without exposing private keys.
 - Keep `CRUX_PUBLIC_AGENT_RUNS_ENABLED=false` in production. The web demo uses
   admin/operator sessions for house-wallet runs, visitor mode uses funded visitor
   wallets, and trusted external agents use scoped Bearer keys.
@@ -238,6 +241,7 @@ npm run external-demo       # pay a REAL external x402 service on Base (via the 
 npm run check:migrations    # verify Supabase migration naming/order
 npm run verify:migrations   # apply all migrations to disposable Postgres
 npm run verify:production   # smoke-check the deployed production app
+npm run check:fuel          # report house/seller Arc wallet and Gateway balances
 npm run reconcile:payments  # reconcile Supabase payment_events settlement proof
 npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key

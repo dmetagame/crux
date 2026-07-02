@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       },
       "/api/wallet/create": {
         post: {
-          summary: "Create or recover a deterministic visitor wallet",
+          summary: "Create or recover a stored visitor wallet",
           description:
             "Pass an optional email to recover the same Arc testnet wallet later. The response includes a wallet token; store it client-side and send it back as X-Crux-Wallet-Token.",
           requestBody: {

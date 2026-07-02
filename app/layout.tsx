@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
   title: "Crux — Autonomous Paying Research Agent",
   description:
-    "Crux is an AI agent that decides what information is worth buying about a company, under a strict USDC budget, paying for each source with real nanopayments that settle on Arc.",
+    "Crux is an AI agent that decides what information is worth buying about a company, under a strict USDC budget, paying for each source with Circle Gateway nanopayments on Arc.",
 };
 
 const geistSans = Geist({

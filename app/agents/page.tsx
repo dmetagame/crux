@@ -81,7 +81,7 @@ export default function AgentsPage() {
             icon={<Wallet className="h-4 w-4" aria-hidden="true" />}
             title="Visitor wallet"
             badge="self-funded"
-            text="Create or recover a deterministic Arc testnet wallet and run research from that balance."
+            text="Create or recover a stored Arc testnet wallet by email and run research from that balance."
           />
           <ModeCard
             icon={<KeyRound className="h-4 w-4" aria-hidden="true" />}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Copy, ExternalLink, LogIn, RefreshCw, ShieldCheck, UserRound, Wallet } from "lucide-react";
+import { Copy, ExternalLink, LogIn, ReceiptText, RefreshCw, ShieldCheck, UserRound, Wallet } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import TopoBackground from "@/components/topo-background";
 import {
@@ -501,7 +501,7 @@ function AgentPageContent() {
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Crux decides what information is worth buying about a subject, under a strict USDC budget, and pays for each
-              source with real nanopayments that settle on Arc. The spending{" "}
+              source with real nanopayments through Circle Gateway on Arc. The spending{" "}
               <span className="text-zinc-200">judgment</span> is the product.
             </p>
           </div>
@@ -524,6 +524,7 @@ function AgentPageContent() {
           </p>
         )}
 
+        <VerifyCruxPanel />
         <JudgeProofPanel />
         <FeaturedReceipts />
         <RoleWorkspacePanel
@@ -788,6 +789,59 @@ function RecentSettlementFeed({ stats }: { stats: Stats | null }) {
   );
 }
 
+function VerifyCruxPanel() {
+  const checks = [
+    {
+      label: "Inspect receipts",
+      text: "Durable runs show budgets, buys, skips, final output, and Gateway settlement refs.",
+      href: "#featured-receipts",
+    },
+    {
+      label: "Run hands-on",
+      text: "Use a self-funded visitor wallet; payments come from that wallet and count as a distinct payer.",
+      href: "#visitor-wallet",
+    },
+    {
+      label: "Track settlement",
+      text: "Open a receipt for Gateway refs; ArcScan links appear when Gateway exposes an Arc transaction hash.",
+      href: FEATURED_RECEIPTS[0].href,
+    },
+    {
+      label: "Agent access",
+      text: "External agents can discover x402 resources through OpenAPI and the well-known manifest.",
+      href: "/agents",
+    },
+  ];
+  return (
+    <section className="mt-5 rounded-lg border border-zinc-800 bg-zinc-900/45 p-4 backdrop-blur-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ReceiptText className="h-4 w-4 text-teal-300" aria-hidden="true" />
+          <h2 className="text-sm font-semibold text-zinc-100">Verify Crux</h2>
+        </div>
+        <span className="text-[11px] uppercase tracking-wide text-zinc-600">built for async judging</span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        {checks.map((check) => (
+          <a
+            key={check.label}
+            href={check.href}
+            target={check.href.startsWith("http") ? "_blank" : undefined}
+            rel={check.href.startsWith("http") ? "noreferrer" : undefined}
+            className="group rounded-md border border-zinc-800 bg-zinc-950/35 p-3 hover:border-teal-500/60"
+          >
+            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-zinc-200">
+              {check.label}
+              <ExternalLink className="h-3.5 w-3.5 text-zinc-600 group-hover:text-teal-300" aria-hidden="true" />
+            </div>
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{check.text}</p>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function JudgeProofPanel() {
   const proofs = [
     {
@@ -828,7 +882,7 @@ function JudgeProofPanel() {
 
 function FeaturedReceipts() {
   return (
-    <section className="mt-5">
+    <section id="featured-receipts" className="mt-5 scroll-mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Featured proof receipts</h2>
         <span className="text-[11px] text-zinc-600">Durable artifacts from live Arc testnet runs</span>
@@ -892,11 +946,12 @@ function RoleWorkspacePanel({
   const operatorSelected = role === "operator";
   const walletReady = !!(wallet?.walletToken && walletStatus?.funded);
   const operatorReady = !!adminSession?.authenticated;
+  const visitorBadge = walletReady ? "funded" : wallet ? "faucet needed" : "self-funded";
   const cardBase = "rounded-lg border bg-zinc-900/45 backdrop-blur-sm transition";
 
   return (
     <section className="mt-5 grid gap-3 md:grid-cols-2">
-      <div className={`${cardBase} ${visitorSelected ? "border-teal-500/70" : "border-zinc-800"}`}>
+      <div id="visitor-wallet" className={`${cardBase} scroll-mt-4 ${visitorSelected ? "border-teal-500/70" : "border-zinc-800"}`}>
         <button
           type="button"
           onClick={() => setRole("visitor")}
@@ -908,19 +963,26 @@ function RoleWorkspacePanel({
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-zinc-100">
-              Visitor wallet
+              Hands-on visitor wallet
               <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${walletReady ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800 text-zinc-400"}`}>
-                {walletReady ? "funded" : "email generated"}
+                {visitorBadge}
               </span>
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-zinc-500">
-              Visitors generate a deterministic Arc testnet wallet from email and pay from their own funded balance.
+              Email recovers the same stored Arc testnet wallet. Fund it at Circle faucet, then Crux pays from that balance.
             </span>
           </span>
         </button>
 
         {visitorSelected && (
           <div className="space-y-3 border-t border-zinc-800 px-4 pb-4 pt-3">
+            <div className="grid gap-2 text-[11px] text-zinc-500 sm:grid-cols-4">
+              {["1. Email", "2. Faucet", "3. Check", "4. Research"].map((step) => (
+                <span key={step} className="rounded border border-zinc-800 bg-zinc-950/35 px-2 py-1 text-center">
+                  {step}
+                </span>
+              ))}
+            </div>
             {!wallet ? (
               <div className="flex flex-wrap items-center gap-2">
                 <input

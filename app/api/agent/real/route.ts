@@ -30,7 +30,8 @@ export async function GET(req: Request) {
   const model = url.searchParams.get("model") ?? "anthropic/claude-haiku-4.5";
   const budget = parseFloat(url.searchParams.get("budget") ?? "0.03");
   // Optional: pay from a visitor's own funded wallet instead of the house wallet.
-  // When absent, the default zero-friction house-wallet flow is unchanged.
+  // When absent, house-wallet access is limited to admin sessions, trusted agent
+  // keys, or explicitly enabled public runs.
   const walletId = url.searchParams.get("walletId")?.trim() || null;
   const walletToken = req.headers.get("x-crux-wallet-token")?.trim() || null;
   const baseUrl = url.origin;

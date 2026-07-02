@@ -8,8 +8,8 @@
 
 ## One-liner
 Crux is an autonomous research agent that decides *what information is worth paying for* about any
-subject, under a strict USDC budget, and buys each source with real x402 nanopayments that settle on
-Arc in sub-500ms. **The spending judgment is the product.**
+subject, under a strict USDC budget, and buys each source with real x402 nanopayments verified through
+Circle Gateway's sub-500ms path and batch-settled on Arc. **The spending judgment is the product.**
 
 ## What it does (two surfaces, one engine)
 1. **Research a real subject** — name any company, project, or person. Crux shops live paid sources
