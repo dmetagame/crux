@@ -51,13 +51,16 @@ post-hackathon API posture credible.
 - **Agentic sophistication (30%)** — the agent makes genuine cost/value tradeoffs (preview vs buy,
   public-vs-private EDGAR call, redundancy avoidance, rumor skepticism), not scripted automation. The
   Benchmark tab proves this objectively against a ground-truth key and naive baselines.
-- **Traction (30%)** — zero-friction by default: no signup, pick a subject, watch real payments flow. The
-  live counter (autonomous payments / test-USDC settled / avg tx size / distinct payers) reads straight
-  from on-chain settlements; average transaction size is sub-cent, matching the RFB metric. For *genuine*
-  distinct-payer signal, an optional lane lets a visitor generate their own Arc testnet wallet, fund it at
-  the official Circle faucet, and pay for research from it — so they appear as a real distinct payer
-  (`payment_events.payer` is the buyer address), counted separately as "wallets self-funded by visitors."
-  The run receipt pages turn those sessions into shareable proof artifacts.
+- **Traction (30%)** — public proof first: Crux has already produced hundreds of settled autonomous
+  test-USDC payments, visible in the live counter (autonomous payments / test-USDC settled / sub-cent
+  avg tx size / distinct payers, read straight from on-chain settlements) and in durable receipt pages.
+  Judges can inspect the golden receipts asynchronously, then run the product hands-on through the
+  self-funded visitor wallet lane: generate an Arc testnet wallet (the same email recovers the same
+  wallet), fund it at the official Circle faucet, and run research from it — the payment settles from
+  that wallet, so it appears as a genuine distinct payer (`payment_events.payer` is the buyer address),
+  counted separately as "wallets self-funded by visitors." House-wallet spend is intentionally gated
+  behind admin sessions or scoped trusted-agent keys, with hourly limits, daily budget caps, and
+  concurrency locks — the budget-control systems RFB-01 explicitly asks for.
 - **Circle tool usage (20%)** — Circle Gateway batching + x402 (HTTP 402) on Arc; the app is both buyer
   (the agent) and seller (x402-gated source endpoints). Plus an external-counterparty leg paying a
   third-party x402 resource via the Coinbase x402 Bazaar (`npm run external-demo`).
@@ -65,10 +68,13 @@ post-hackathon API posture credible.
   most agents can't show, and a public/private discrimination that makes the budget decision legible.
 
 ## Traction question answers (fill live numbers from the counter at submission time)
-- **Onboarding / usage:** no-account, one-click. Each subject a visitor researches is an onboarded
-  session that produces real on-chain nanopayments. Current counter: see the top of crux-khaki.vercel.app
-  (e.g., 200+ autonomous payments, ~$2 test-USDC settled, sub-cent average, across N distinct payer
-  wallets). Shareable example chips lower the barrier to a first run.
+- **Onboarding / usage:** the live counter, latest settlements, and receipt pages are public with no
+  account. To run the agent hands-on, a visitor self-funds their own Arc testnet wallet (generate →
+  Circle faucet → run) and lands on the counter as a distinct payer; house-wallet runs are reserved for
+  operator sessions and scoped agent keys so unauthenticated callers cannot spend the house budget.
+  Current counter: see the top of crux-khaki.vercel.app (e.g., 300+ autonomous payments, ~$2.75
+  test-USDC settled, sub-cent average, across N distinct payer wallets). Shareable example chips and
+  golden receipts lower the barrier to a first look.
 - **Problem addressed:** paid APIs/data are priced per-request, but agents have no judgment about which
   purchases are worth it under a budget — they over-buy or buy blind. Crux is that missing judgment
   layer: it decides, pays, cites, and stops while budget remains.
