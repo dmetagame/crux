@@ -53,7 +53,7 @@ post-hackathon API posture credible.
   Benchmark tab proves this objectively against a ground-truth key and naive baselines.
 - **Traction (30%)** — public proof first: Crux has already produced hundreds of settled autonomous
   test-USDC payments, visible in the live counter (autonomous payments / test-USDC settled / sub-cent
-  avg tx size / distinct payers, read straight from on-chain settlements) and in durable receipt pages.
+  avg tx size / distinct payers, recorded from settled x402 payments) and in durable receipt pages.
   Judges can inspect the golden receipts asynchronously, then run the product hands-on through the
   self-funded visitor wallet lane: generate an Arc testnet wallet (the same email recovers the same
   wallet), fund it at the official Circle faucet, and run research from it — the payment settles from
@@ -73,7 +73,7 @@ post-hackathon API posture credible.
   Circle faucet → run) and lands on the counter as a distinct payer; house-wallet runs are reserved for
   operator sessions and scoped agent keys so unauthenticated callers cannot spend the house budget.
   Current counter: see the top of crux-khaki.vercel.app (e.g., 300+ autonomous payments, ~$2.75
-  test-USDC settled, sub-cent average, across N distinct payer wallets). Shareable example chips and
+  test-USDC settled, sub-cent average, across multiple distinct payer wallets). Shareable example chips and
   golden receipts lower the barrier to a first look.
 - **Problem addressed:** paid APIs/data are priced per-request, but agents have no judgment about which
   purchases are worth it under a budget — they over-buy or buy blind. Crux is that missing judgment
