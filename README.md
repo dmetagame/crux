@@ -115,6 +115,9 @@ scoped Crux agent key.
 - USDC: `0x3600000000000000000000000000000000000000`; Circle Gateway batching
 - Payments are gas-free for the agent (authorizations are batched into one
   on-chain settlement); explorer: `https://testnet.arcscan.app`
+- Receipts record Circle Gateway settlement references for each paid source.
+  Crux links ArcScan only when Gateway exposes a real Arc EVM transaction hash;
+  otherwise the durable proof is the Gateway ref stored in the receipt/payment ledger.
 
 ## Beyond Arc: genuine external counterparties
 

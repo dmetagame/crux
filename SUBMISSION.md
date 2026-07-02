@@ -25,7 +25,8 @@ Arc in sub-500ms. **The spending judgment is the product.**
 
 Every run on either surface fires real test-USDC settlements on Arc, counted live on the page.
 Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
-purchase rationales, final brief, benchmark score when available, and Arcscan settlement links.
+purchase rationales, final brief, benchmark score when available, and Gateway settlement proof
+metadata, with ArcScan links when a real Arc transaction hash is available.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
 ## Golden receipts
