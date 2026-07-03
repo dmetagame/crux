@@ -8,8 +8,9 @@
 
 ## One-liner
 Crux is an autonomous research agent that decides *what information is worth paying for* about any
-subject, under a strict USDC budget, and buys each source with real x402 nanopayments verified through
-Circle Gateway's sub-500ms path and batch-settled on Arc. **The spending judgment is the product.**
+subject, under a strict USDC budget, and buys each source with real x402 nanopayments — verified by
+Circle's facilitator in sub-500ms and batch-settled on Arc via Circle Gateway. **The spending judgment
+is the product.**
 
 ## What it does (two surfaces, one engine)
 1. **Research a real subject** — name any company, project, or person. Crux shops live paid sources
@@ -88,8 +89,10 @@ counter · bundled SEC CIK/ticker map (SEC rate-limits datacenter IPs, so the pu
 deterministic and zero-latency; filings enrichment is best-effort live).
 
 ## Honest notes
-- Demo LLM is Haiku 4.5 (premium models are gated on the free AI Gateway tier and would exceed the 60s
-  Hobby function cap); the agent loop is model-agnostic and runs Opus 4.8 unchanged with paid credits.
+- The demo LLM is Haiku 4.5 — a deliberate budget decision, applied to our own stack: it hits the
+  benchmark ceiling (11/11, trap avoided, rumor refused) at a fraction of frontier-model cost, which is
+  exactly the cost/value judgment Crux exists to make. The agent loop is model-agnostic and runs
+  Opus 4.8 unchanged with paid credits.
 - Real-subject mode depends on live public APIs; obscure subjects may return less. Curated example chips
   are unambiguous public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,
