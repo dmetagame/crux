@@ -97,3 +97,11 @@ deterministic and zero-latency; filings enrichment is best-effort live).
   are unambiguous public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,
   the scorer, the real-data layer, the agents, and the UI are ours.
+
+## What's next (post-submission roadmap)
+- **Multi-model second opinions:** the agent loop is model-agnostic, so a second model can critique the
+  source plan before any spend — the final decision stays budget-bound and receipt-backed with the
+  primary agent. The same marketplace + ground-truth scorer also works as a benchmark for *which model
+  spends money better*.
+- Scoped agent keys for external teams already work today (`AGENT_INTEGRATION.md`); the roadmap is
+  turning those into self-serve onboarding with per-key budgets.
