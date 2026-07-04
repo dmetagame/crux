@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, LogIn, ReceiptText, RefreshCw, ShieldCheck, UserRound, Wallet } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import CruxMark from "@/components/crux-mark";
+import PageMotion from "@/components/page-motion";
 import TopoBackground from "@/components/topo-background";
 import {
   settlementExplorerUrl,
@@ -489,12 +491,14 @@ function AgentPageContent() {
   return (
     <div className="relative min-h-screen bg-[#050509] text-zinc-100">
       <TopoBackground />
+      <PageMotion />
       <div className="relative z-10 mx-auto max-w-5xl px-5 py-10">
         {/* Header */}
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <header data-animate className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="flex items-baseline gap-2.5">
-              <h1 className="bg-gradient-to-r from-violet-200 via-violet-100 to-teal-200 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+            <div className="flex items-center gap-2.5">
+              <CruxMark size={30} className="shrink-0" />
+              <h1 className="font-display bg-gradient-to-r from-violet-200 via-violet-100 to-teal-200 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
                 Crux
               </h1>
               <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">paying research agent</span>
@@ -546,7 +550,7 @@ function AgentPageContent() {
         />
 
         {/* Tabs */}
-        <div className="mt-6 flex gap-1 border-b border-zinc-800">
+        <div data-animate className="mt-6 flex gap-1 border-b border-zinc-800">
           <TabButton active={tab === "real"} onClick={() => setTab("real")} disabled={running}>
             Research a real subject
           </TabButton>
@@ -769,10 +773,10 @@ function StatsBar({ stats }: { stats: Stats | null }) {
     { label: "distinct payers", value: stats ? stats.distinctPayers.toLocaleString() : "—" },
   ];
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div data-animate className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {cells.map((c) => (
         <div key={c.label} className="rounded-lg border border-zinc-800 bg-zinc-900/55 px-4 py-3 backdrop-blur-sm">
-          <div className="text-2xl font-semibold tracking-tight text-zinc-100">{c.value}</div>
+          <div className="font-display text-2xl font-semibold tracking-tight text-zinc-100">{c.value}</div>
           <div className="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">{c.label}</div>
         </div>
       ))}
@@ -801,8 +805,8 @@ function RecentSettlementFeed({ stats }: { stats: Stats | null }) {
         const body = (
           <>
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden="true" />
-            <span className="tabular-nums text-zinc-300">${p.amount.toFixed(4)}</span>
-            <span>· {proof} · {label}</span>
+            <span className="font-mono text-zinc-300">${p.amount.toFixed(4)}</span>
+            <span>· {proof} · <span className="font-mono">{label}</span></span>
           </>
         );
         return href ? (
@@ -850,7 +854,7 @@ function VerifyCruxPanel() {
     },
   ];
   return (
-    <section className="mt-5 rounded-lg border border-zinc-800 bg-zinc-900/45 p-4 backdrop-blur-sm">
+    <section data-animate className="mt-5 rounded-lg border border-zinc-800 bg-zinc-900/45 p-4 backdrop-blur-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ReceiptText className="h-4 w-4 text-teal-300" aria-hidden="true" />
@@ -903,7 +907,7 @@ function JudgeProofPanel() {
     },
   ];
   return (
-    <section className="mt-5 grid gap-2 md:grid-cols-4">
+    <section data-animate className="mt-5 grid gap-2 md:grid-cols-4">
       {proofs.map((p) => (
         <div key={p.name} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3 backdrop-blur-sm">
           <div className="flex items-center justify-between gap-2">
@@ -919,7 +923,7 @@ function JudgeProofPanel() {
 
 function FeaturedReceipts() {
   return (
-    <section id="featured-receipts" className="mt-5 scroll-mt-4">
+    <section data-animate id="featured-receipts" className="mt-5 scroll-mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">/ proof receipts</h2>
         <span className="text-[11px] text-zinc-600">Durable artifacts from live Arc testnet runs</span>
@@ -987,7 +991,7 @@ function RoleWorkspacePanel({
   const cardBase = "rounded-lg border bg-zinc-900/45 backdrop-blur-sm transition";
 
   return (
-    <section className="mt-5 grid gap-3 md:grid-cols-2">
+    <section data-animate className="mt-5 grid gap-3 md:grid-cols-2">
       <div id="visitor-wallet" className={`${cardBase} scroll-mt-4 ${visitorSelected ? "border-teal-500/70" : "border-zinc-800"}`}>
         <button
           type="button"
@@ -1212,7 +1216,7 @@ function LiveActivity({
           </span>
         </div>
       )}
-      <div ref={logRef} className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/55 p-3 backdrop-blur-sm">
+      <div ref={logRef} data-lenis-prevent className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/55 p-3 backdrop-blur-sm">
         {events.map((e, i) => (
           <EventRow key={i} label={e.label} ev={e.ev} />
         ))}
@@ -1231,7 +1235,7 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
         </span>
         {label && <span className="text-zinc-600">[{label}]</span>}
         <span className="min-w-0 flex-1 truncate text-zinc-400">{pretty(ev.sourceId)}</span>
-        <span className="tabular-nums text-zinc-600">free</span>
+        <span className="font-mono text-[11px] text-zinc-600">free</span>
       </div>
     );
   }
@@ -1251,7 +1255,7 @@ function EventRow({ label, ev }: { label?: string; ev: AgentEvent }) {
         ) : (
           <span className="text-amber-400">no usable data</span>
         )}
-        <span className="tabular-nums font-medium text-zinc-100">{ev.price}</span>
+        <span className="font-mono text-[11px] font-medium text-zinc-100">{ev.price}</span>
       </div>
       {(ev.rationale || ev.tx) && (
         <div className="mt-0.5 flex items-baseline gap-2">
@@ -1272,14 +1276,14 @@ function SettlementReference({ tx, className }: { tx: string; className?: string
         href={href}
         target="_blank"
         rel="noreferrer"
-        className={`${className ?? ""} underline decoration-zinc-700 underline-offset-2 hover:text-teal-300 hover:decoration-teal-500`}
+        className={`${className ?? ""} font-mono underline decoration-zinc-700 underline-offset-2 hover:text-teal-300 hover:decoration-teal-500`}
       >
         · {label}
       </a>
     );
   }
   return (
-    <span className={className} title={`Circle Gateway settlement reference: ${tx}`}>
+    <span className={`${className ?? ""} font-mono`} title={`Circle Gateway settlement reference: ${tx}`}>
       · {label}
     </span>
   );

@@ -17,7 +17,7 @@
  */
 
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Geist, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -39,6 +39,21 @@ const geistSans = Geist({
   subsets: ["latin"],
 });
 
+// Display face for the wordmark, headings, and KPI numerals — the geometric
+// grotesque that reads "web3" without a custom typeface license.
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
+  display: "swap",
+  subsets: ["latin"],
+});
+
+// Mono for money, settlement refs, and addresses.
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+  subsets: ["latin"],
+});
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -46,7 +61,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.className} antialiased`}>
+      <body className={`${geistSans.className} ${spaceGrotesk.variable} ${jetbrainsMono.variable} antialiased`}>
         <TooltipProvider>{children}</TooltipProvider>
         <Toaster richColors position="bottom-right" />
       </body>
