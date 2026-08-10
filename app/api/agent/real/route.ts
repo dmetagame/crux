@@ -1,6 +1,8 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import { parseAgentBody, realAgentRequest } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
-import { guardAgentRun } from "@/lib/agent-access";
+import { guardAgentRun, payerKindForActor } from "@/lib/agent-access";
+import { cruxCanonicalOrigin } from "@/lib/crux-origin";
 import { createNdjsonWriter, ndjsonError, ndjsonResponse } from "@/lib/ndjson";
 import { agentIdempotencyScope, requestIdempotencyKey } from "@/lib/run-idempotency";
 import { replayRunReceipt, runReceiptUrl } from "@/lib/run-replay";
@@ -24,31 +26,33 @@ export const maxDuration = 60;
  * Pays REAL USDC (Arc testnet) for each live data source. No scorer — the subject
  * is real, so the brief is judged by its citations rather than a ground-truth key.
  */
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const subject = url.searchParams.get("subject")?.trim() || "OpenAI";
-  const model = url.searchParams.get("model") ?? "anthropic/claude-haiku-4.5";
-  const budget = parseFloat(url.searchParams.get("budget") ?? "0.03");
-  // Optional: pay from a visitor's own funded wallet instead of the house wallet.
-  // When absent, house-wallet access is limited to admin sessions, trusted agent
-  // keys, or explicitly enabled public runs.
-  const walletId = url.searchParams.get("walletId")?.trim() || null;
+export async function GET() {
+  return ndjsonError("Agent runs require POST with an Idempotency-Key header.", 405, {
+    Allow: "POST",
+  });
+}
+
+export async function POST(req: Request) {
+  const parsed = realAgentRequest.safeParse(await parseAgentBody(req));
+  if (!parsed.success) return ndjsonError("Invalid real-subject run request.", 400);
+  const { subject, model, budget, walletId } = parsed.data;
   const walletToken = req.headers.get("x-crux-wallet-token")?.trim() || null;
-  const baseUrl = url.origin;
-  const idempotencyKey = requestIdempotencyKey(req, url);
+  const baseUrl = cruxCanonicalOrigin(req);
+  const idempotencyKey = requestIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return ndjsonError("Idempotency-Key header is required for paid agent runs.", 400);
+  }
   const idempotencyScope = agentIdempotencyScope(req, "agent:real", {
     visitorWalletId: walletId,
   });
 
-  if (idempotencyKey) {
-    const existing = await getRunReceiptByIdempotencyKey(idempotencyScope, idempotencyKey);
-    if (existing) {
-      const replay = replayRunReceipt(existing, url.origin);
-      return ndjsonResponse(replay.body, replay.status, {
-        "Idempotency-Replayed": "true",
-        Location: runReceiptUrl(url.origin, existing.id),
-      });
-    }
+  const existing = await getRunReceiptByIdempotencyKey(idempotencyScope, idempotencyKey);
+  if (existing) {
+    const replay = replayRunReceipt(existing, baseUrl);
+    return ndjsonResponse(replay.body, replay.status, {
+      "Idempotency-Replayed": "true",
+      Location: runReceiptUrl(baseUrl, existing.id),
+    });
   }
 
   let visitorWallet: { key: `0x${string}`; address: string } | null = null;
@@ -68,7 +72,7 @@ export async function GET(req: Request) {
   });
   if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
 
-  const payerKind = walletId ? "visitor-wallet" : "house-wallet";
+  const payerKind = payerKindForActor(guard.actorKind);
   let run;
   try {
     run = await startRunReceipt({
@@ -111,10 +115,10 @@ export async function GET(req: Request) {
   }
   if (run.replay && run.receipt) {
     await guard.release();
-    const replay = replayRunReceipt(run.receipt, url.origin);
+    const replay = replayRunReceipt(run.receipt, baseUrl);
     return ndjsonResponse(replay.body, replay.status, {
       "Idempotency-Replayed": "true",
-      Location: runReceiptUrl(url.origin, run.receipt.id),
+      Location: runReceiptUrl(baseUrl, run.receipt.id),
     });
   }
 
@@ -177,7 +181,7 @@ export async function GET(req: Request) {
           type: "done",
           result,
           receiptId,
-          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
+          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, baseUrl).toString() : null,
         });
       } catch (err) {
         let message = alertErrorMessage(err);

@@ -11,7 +11,7 @@ export type SettlementStatus =
   | "arc_confirmed"
   | "arc_failed"
   | "arc_unverified"
-  | "gateway_settled"
+  | "gateway_reference_recorded"
   | "recorded";
 
 export function isEvmTxHash(value: string) {
@@ -51,7 +51,7 @@ export function classifySettlementReference(value?: string | null): {
   return {
     settlementReference,
     settlementKind: "gateway_settlement_reference",
-    settlementStatus: "gateway_settled",
+    settlementStatus: "gateway_reference_recorded",
     arcTxHash: null,
   };
 }
@@ -75,8 +75,8 @@ export function settlementStatusLabel(status?: string | null) {
       return "Arc failed";
     case "arc_unverified":
       return "Arc unverified";
-    case "gateway_settled":
-      return "Gateway settled";
+    case "gateway_reference_recorded":
+      return "Gateway reference recorded";
     default:
       return "Recorded";
   }

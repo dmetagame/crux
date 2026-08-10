@@ -12,6 +12,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { getAddress } from "viem";
 import { randomToken, safeEqualHex, sha256Hex } from "@/lib/access-crypto";
 import {
   decryptWalletPrivateKey,
@@ -36,34 +37,9 @@ export interface NewWallet {
   walletToken: string;
 }
 
-async function findWalletByEmail(
-  email: string,
-): Promise<{ walletId: string; address: `0x${string}` } | null> {
-  const { data, error } = await admin()
-    .from("user_wallets")
-    .select("id, address")
-    .eq("email", email)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(1);
-
-  if (error) throw new Error(`Could not look up wallet: ${error.message}`);
-  const existing = data?.[0];
-  if (!existing) return null;
-  return { walletId: existing.id as string, address: existing.address as `0x${string}` };
-}
-
-/**
- * Return the existing wallet for an email, or create one if it does not exist.
- * Anonymous calls always create a fresh testnet wallet.
- */
-export async function createUserWallet(email: string | null): Promise<NewWallet> {
-  const normalizedEmail = email?.trim().toLowerCase() || null;
-  if (normalizedEmail) {
-    const existing = await findWalletByEmail(normalizedEmail);
-    if (existing) {
-      return { ...existing, walletToken: await issueWalletToken(existing.walletId) };
-    }
+export async function createUserWallet(): Promise<NewWallet> {
+  if (shouldRequireEncryptedWallets() && !hasWalletEncryptionKey()) {
+    throw new Error("Visitor wallet creation is unavailable until wallet encryption is configured.");
   }
 
   const privateKey = generatePrivateKey();
@@ -74,7 +50,7 @@ export async function createUserWallet(email: string | null): Promise<NewWallet>
   let { data, error } = await admin()
     .from("user_wallets")
     .insert({
-      email: normalizedEmail,
+      email: null,
       address,
       ...keyColumns,
       wallet_token_hash: sha256Hex(walletToken),
@@ -83,27 +59,10 @@ export async function createUserWallet(email: string | null): Promise<NewWallet>
     .select("id, address")
     .single();
 
-  if (error && isEncryptedWalletColumnError(error.message)) {
+  if (error && isRequiredWalletColumnError(error.message)) {
     throw new Error(
-      "Could not create encrypted wallet: apply the wallet encryption migration first.",
+      "Could not create a secure wallet: apply all Supabase migrations first.",
     );
-  }
-
-  if (error && /wallet_token_hash|wallet_token_created_at/i.test(error.message)) {
-    const fallback = await admin()
-      .from("user_wallets")
-      .insert({ email: normalizedEmail, address, ...keyColumns })
-      .select("id, address")
-      .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
-
-  if (error && normalizedEmail && /duplicate|unique/i.test(error.message)) {
-    const existing = await findWalletByEmail(normalizedEmail);
-    if (existing) {
-      return { ...existing, walletToken: await issueWalletToken(existing.walletId) };
-    }
   }
 
   if (error) throw new Error(`Could not create wallet: ${error.message}`);
@@ -118,29 +77,25 @@ export async function getWalletKey(
 ): Promise<{ key: `0x${string}`; address: string } | null> {
   const tokenQuery = await admin()
     .from("user_wallets")
-    .select("address, private_key, private_key_ciphertext, wallet_token_hash")
+    .select("address, private_key, private_key_ciphertext, wallet_token_hash, wallet_token_created_at")
     .eq("id", walletId)
     .single();
-  let data: any | null = tokenQuery.data;
-  let error = tokenQuery.error;
+  const data = tokenQuery.data;
+  if (tokenQuery.error || !data) return null;
 
-  if (error && /wallet_token_hash|private_key_ciphertext/i.test(error.message)) {
-    const fallback = await admin()
-      .from("user_wallets")
-      .select("address, private_key")
-      .eq("id", walletId)
-      .single();
-    data = fallback.data;
-    error = fallback.error;
-  }
+  const supplied = walletToken?.trim();
+  const tokenHash = data.wallet_token_hash as string | null;
+  const tokenCreatedAt = data.wallet_token_created_at as string | null;
+  if (!supplied || !tokenHash || !tokenCreatedAt) return null;
+  if (!safeEqualHex(tokenHash, sha256Hex(supplied))) return null;
+  if (walletTokenExpired(tokenCreatedAt)) return null;
 
-  if (error || !data) return null;
-  const tokenHash = (data as { wallet_token_hash?: string | null }).wallet_token_hash;
-  if (tokenHash) {
-    const supplied = walletToken?.trim();
-    if (!supplied || !safeEqualHex(tokenHash, sha256Hex(supplied))) return null;
+  const key = resolveStoredWalletKey(data);
+  const derivedAddress = privateKeyToAccount(key).address;
+  if (getAddress(derivedAddress) !== getAddress(data.address as string)) {
+    throw new Error("Stored wallet address does not match its encrypted key.");
   }
-  return { key: resolveStoredWalletKey(data), address: data.address as string };
+  return { key, address: derivedAddress };
 }
 
 /** Count of onboarded wallets — an honest, non-gameable traction signal. */
@@ -151,25 +106,11 @@ export async function countUserWallets(): Promise<number> {
   return count ?? 0;
 }
 
-async function issueWalletToken(walletId: string) {
-  const walletToken = randomToken();
-  const { error } = await admin()
-    .from("user_wallets")
-    .update({
-      wallet_token_hash: sha256Hex(walletToken),
-      wallet_token_created_at: new Date().toISOString(),
-    })
-    .eq("id", walletId);
-
-  if (error && !/wallet_token_hash|wallet_token_created_at/i.test(error.message)) {
-    throw new Error(`Could not issue wallet token: ${error.message}`);
-  }
-
-  return walletToken;
-}
-
 function walletKeyColumns(privateKey: HexPrivateKey) {
   if (!hasWalletEncryptionKey()) {
+    if (shouldRequireEncryptedWallets()) {
+      throw new Error("Missing CRUX_WALLET_ENCRYPTION_KEY.");
+    }
     return { private_key: privateKey };
   }
 
@@ -205,6 +146,18 @@ function resolveStoredWalletKey(data: {
   return plaintext as HexPrivateKey;
 }
 
-function isEncryptedWalletColumnError(message: string) {
-  return /private_key_ciphertext|private_key_encryption_version|private_key_encrypted_at/i.test(message);
+function walletTokenExpired(createdAt: string) {
+  const created = Date.parse(createdAt);
+  if (!Number.isFinite(created)) return true;
+  const maxAgeSeconds = Math.max(
+    300,
+    Number.parseInt(process.env.CRUX_WALLET_TOKEN_MAX_AGE_SECONDS ?? "604800", 10) || 604800,
+  );
+  return Date.now() - created > maxAgeSeconds * 1000;
+}
+
+function isRequiredWalletColumnError(message: string) {
+  return /private_key_ciphertext|private_key_encryption_version|private_key_encrypted_at|wallet_token_hash|wallet_token_created_at/i.test(
+    message,
+  );
 }

@@ -2,10 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { runStaleTimeoutSeconds } from "@/lib/run-receipts";
 
 type OpenApiRunnerTool = {
-  get: {
+  post: {
     summary: string;
     security: Record<string, never[]>[];
     parameters: Record<string, unknown>[];
+    requestBody: Record<string, unknown>;
     responses: Record<string, unknown>;
     "x-crux": Record<string, unknown>;
   };
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
   const staleTimeoutSeconds = runStaleTimeoutSeconds();
   const publicHouseWalletRunsEnabled = envBool(
     "CRUX_PUBLIC_AGENT_RUNS_ENABLED",
-    true,
+    false,
   );
 
   return NextResponse.json({
@@ -48,28 +49,17 @@ export async function GET(req: NextRequest) {
           "x-rateLimit": "60 requests/minute/IP",
         },
       },
+      "/api/version": {
+        get: {
+          summary: "Read the deployed Crux git SHA and environment",
+          responses: { "200": { description: "Deployment version metadata" } },
+        },
+      },
       "/api/wallet/create": {
         post: {
-          summary: "Create or recover a stored visitor wallet",
+          summary: "Create a fresh stored visitor wallet",
           description:
-            "Pass an optional email to recover the same Arc testnet wallet later. The response includes a wallet token; store it client-side and send it back as X-Crux-Wallet-Token.",
-          requestBody: {
-            required: false,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    email: {
-                      type: "string",
-                      format: "email",
-                      description: "Optional recovery email. Same email returns the same wallet.",
-                    },
-                  },
-                },
-              },
-            },
-          },
+            "Creates a fresh Arc testnet wallet and returns a short-lived capability token. Store the token client-side and send it back as X-Crux-Wallet-Token.",
           responses: {
             "200": { description: "walletId, address, and walletToken" },
             "429": { description: "Wallet creation rate limit reached" },
@@ -78,7 +68,7 @@ export async function GET(req: NextRequest) {
           "x-crux": {
             network: "arcTestnet",
             fundAt: "https://faucet.circle.com",
-            note: "Visitor wallets pay from their own funded balance; Crux does not sponsor these runs.",
+            note: "Visitor wallets are Crux-hosted custodial testnet wallets. Crux does not sponsor these runs.",
           },
         },
       },
@@ -222,36 +212,22 @@ function realRunnerTool(publicHouseWalletRunsEnabled: boolean) {
     "Run Crux's real-subject research agent",
     publicHouseWalletRunsEnabled,
   );
-  tool.get.security = [
+  tool.post.security = [
     { CruxAgentKey: [] },
     { CruxAdminSession: [] },
     { CruxWalletToken: [] },
   ];
-  tool.get.parameters.push(
-    {
-      name: "subject",
-      in: "query",
-      required: true,
-      schema: { type: "string" },
-      description: "Company, project, person, or topic to research.",
+  tool.post.requestBody = jsonRequestBody({
+    subject: { type: "string", description: "Company, project, person, or topic to research." },
+    model: { type: "string", default: "anthropic/claude-haiku-4.5" },
+    budget: { type: "number", default: 0.03, maximum: 1 },
+    walletId: {
+      type: ["string", "null"],
+      format: "uuid",
+      description: "With X-Crux-Wallet-Token, pays from the visitor wallet instead of the house wallet.",
     },
-    {
-      name: "budget",
-      in: "query",
-      required: false,
-      schema: { type: "number", default: 0.03 },
-      description: "USDC budget cap for the run.",
-    },
-    {
-      name: "walletId",
-      in: "query",
-      required: false,
-      schema: { type: "string", format: "uuid" },
-      description:
-        "When supplied with X-Crux-Wallet-Token, pays from the visitor wallet instead of the house wallet.",
-    },
-  );
-  tool.get["x-crux"].visitorWalletSupported = true;
+  }, ["subject"]);
+  tool.post["x-crux"].visitorWalletSupported = true;
   return tool;
 }
 
@@ -261,19 +237,33 @@ function runnerTool(
   publicHouseWalletRunsEnabled: boolean,
 ): OpenApiRunnerTool {
   return {
-    get: {
+    post: {
       summary,
       security: [{ CruxAgentKey: [] }, { CruxAdminSession: [] }],
       parameters: [
         {
           name: "Idempotency-Key",
           in: "header",
-          required: false,
+          required: true,
           schema: { type: "string", maxLength: 200 },
           description:
-            "Recommended for retries. Reusing the same key for the same caller returns the existing running/completed/failed run instead of spending again.",
+            "Required. Reusing the same key for the same caller returns the existing running/completed/failed run instead of spending again.",
         },
       ],
+      requestBody:
+        scope === "agent:baseline"
+          ? jsonRequestBody({
+              topic: { type: "string", default: "Northwind Logistics" },
+              strategy: { type: "string", enum: ["cheapest", "quality", "preview"], default: "cheapest" },
+              budget: { type: "number", default: 0.05, maximum: 1 },
+              seed: { type: "string", default: "demo" },
+            })
+          : jsonRequestBody({
+              topic: { type: "string", default: "Northwind Logistics" },
+              model: { type: "string", default: "anthropic/claude-haiku-4.5" },
+              budget: { type: "number", default: 0.05, maximum: 1 },
+              seed: { type: "string", default: "demo" },
+            }),
       responses: {
         "200": { description: "NDJSON stream of events and final result" },
         "409": { description: "A run with this Idempotency-Key is already in progress" },
@@ -289,13 +279,32 @@ function runnerTool(
         contentType: "application/x-ndjson",
         publicHouseWalletRunsEnabled,
         idempotency:
-          "Send Idempotency-Key on retried agent-run requests to avoid duplicate spend. If a replay returns running/409, poll /api/runs/{receiptId}.",
+          "Required on every paid runner request. If a replay returns running/409, poll /api/runs/{receiptId}.",
         authModes: publicHouseWalletRunsEnabled
           ? ["public-capped", "crux-agent-key", "admin-session"]
           : ["crux-agent-key", "admin-session"],
         note: publicHouseWalletRunsEnabled
           ? "Public demo access is tightly capped because this route can spend the house wallet."
           : "Public house-wallet access is disabled in production because this route can spend the house wallet.",
+      },
+    },
+  };
+}
+
+function jsonRequestBody(
+  properties: Record<string, unknown>,
+  required: string[] = [],
+) {
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          properties,
+          ...(required.length ? { required } : {}),
+        },
       },
     },
   };

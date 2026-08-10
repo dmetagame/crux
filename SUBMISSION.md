@@ -26,7 +26,7 @@ is the product.**
 
 Every run on either surface fires real test-USDC settlements on Arc, counted live on the page.
 Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
-purchase rationales, final brief, benchmark score when available, and Gateway settlement proof
+purchase rationales, final brief, benchmark score when available, and Circle facilitator evidence
 metadata, with ArcScan links when a real Arc transaction hash is available.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
@@ -57,8 +57,8 @@ post-hackathon API posture credible.
   test-USDC payments, visible in the live counter (autonomous payments / test-USDC settled / sub-cent
   avg tx size / distinct payers, recorded from settled x402 payments) and in durable receipt pages.
   Judges can inspect the golden receipts asynchronously, then run the product hands-on through the
-  self-funded visitor wallet lane: generate an Arc testnet wallet (the same email recovers the same
-  wallet), fund it at the official Circle faucet, and run research from it — the payment settles from
+  self-funded visitor wallet lane: generate a fresh Crux-hosted Arc testnet wallet (capability tokens
+  expire and are not recovered by email), fund it at the official Circle faucet, and run research from
   that wallet, so it appears as a genuine distinct payer (`payment_events.payer` is the buyer address),
   counted separately as "wallets self-funded by visitors." House-wallet spend is intentionally gated
   behind admin sessions or scoped trusted-agent keys, with hourly limits, daily budget caps, and

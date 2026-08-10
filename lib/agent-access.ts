@@ -12,6 +12,13 @@ import {
 
 export type AgentScope = "agent:run" | "agent:real" | "agent:baseline";
 
+export function payerKindForActor(actorKind: GuardSuccess["actorKind"]):
+  "house-wallet" | "visitor-wallet" | "trusted-agent" {
+  if (actorKind === "visitor-wallet") return "visitor-wallet";
+  if (actorKind === "api-key") return "trusted-agent";
+  return "house-wallet";
+}
+
 type AgentKeyConfig = {
   hash: string;
   label?: string;
@@ -173,7 +180,14 @@ async function guardHouseWalletRun(
   const auth = await authenticateHouseWalletActor(req, opts.scope);
   if (!auth.ok) return auth;
 
-  if (auth.actorKind === "public" && !envBool("CRUX_PUBLIC_AGENT_RUNS_ENABLED", true)) {
+  if (auth.actorKind === "admin") {
+    const origin = req.headers.get("origin");
+    if (origin && origin !== new URL(req.url).origin) {
+      return { ok: false, status: 403, message: "Invalid request origin." };
+    }
+  }
+
+  if (auth.actorKind === "public" && !envBool("CRUX_PUBLIC_AGENT_RUNS_ENABLED", false)) {
     return { ok: false, status: 401, message: "Public house-wallet runs are disabled." };
   }
 

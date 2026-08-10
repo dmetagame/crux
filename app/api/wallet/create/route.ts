@@ -6,7 +6,7 @@ export const maxDuration = 15;
 
 /**
  * Creates an optional user-funded testnet wallet for the "pay from your own
- * wallet" lane. Body: { email? }. Returns { walletId, address }.
+ * wallet" lane. Always creates a fresh capability-protected wallet.
  *
  * The caller funds `address` themselves at faucet.circle.com (20 USDC + native
  * gas), then runs research with ?walletId=… so the payment is attributed to them.
@@ -30,17 +30,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let email: string | null = null;
-    try {
-      const body = await req.json();
-      const e = typeof body?.email === "string" ? body.email.trim() : "";
-      // Light sanity check only — email is optional and never verified.
-      if (e && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) email = e;
-    } catch {
-      // No/!JSON body — anonymous wallet is fine.
-    }
-
-    const wallet = await createUserWallet(email);
+    const wallet = await createUserWallet();
     return NextResponse.json(wallet, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return NextResponse.json(

@@ -25,6 +25,7 @@ export type PaymentEvent = {
   endpoint: string;
   payer: string;
   amount_usdc: string;
+  amount_atomic?: string | null;
   network: string;
   gateway_tx: string | null;
   settlement_reference: string | null;
@@ -36,6 +37,9 @@ export type PaymentEvent = {
   arc_confirmed_at: string | null;
   settlement_checked_at: string | null;
   raw?: Record<string, unknown> | null;
+  facilitator_requirements?: Record<string, unknown> | null;
+  facilitator_verify?: Record<string, unknown> | null;
+  facilitator_settle?: Record<string, unknown> | null;
 };
 
 export function usePaymentEvents() {

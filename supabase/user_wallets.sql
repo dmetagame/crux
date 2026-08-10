@@ -37,9 +37,7 @@ $$;
 
 -- Distinct-payer / onboarding signal reads this; keep lookups fast.
 create index if not exists user_wallets_created_at_idx on public.user_wallets (created_at desc);
-create unique index if not exists user_wallets_email_unique_idx
-  on public.user_wallets (email)
-  where email is not null;
+drop index if exists public.user_wallets_email_unique_idx;
 
 -- Service-role only (the server uses the service-role key). No anon access:
 -- key columns must never be exposed to the browser.

@@ -1,132 +1,220 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import {
-  ARC_TESTNET_CHAIN_ID,
-  classifySettlementReference,
-} from "@/lib/settlement";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getHouseAddress } from "@/lib/wallet-keys";
+import { ARC_TESTNET_CHAIN_ID, classifySettlementReference } from "@/lib/settlement";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
 export const maxDuration = 15;
 
-/**
- * Live traction counter. Aggregates the payment_events table that withGateway
- * writes on every Gateway settlement — total autonomous payments, total test-USDC moved,
- * average (sub-cent) transaction size, distinct payers, and the latest payments.
- * This is the RFB-01 traction metric, with Arc tx confirmation shown when
- * Circle Gateway exposes a normal EVM transaction hash.
- */
-export async function GET(req: NextRequest) {
-  try {
-    const rate = await consumeRateLimit({
-      key: limitKey("public:stats", clientIp(req)),
-      limit: 60,
-      windowSeconds: 60,
-    });
-    if (!rate.allowed) {
-      return NextResponse.json(
-        { error: "Stats rate limit reached." },
-        { status: 429, headers: rateLimitHeaders(rate) },
-      );
-    }
+const MICRO_USDC = BigInt(1_000_000);
+const WINDOW_SECONDS = 24 * 60 * 60;
 
+export async function GET(req: NextRequest) {
+  const rate = await consumeRateLimit({
+    key: limitKey("public:stats", clientIp(req)),
+    limit: 60,
+    windowSeconds: 60,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Stats rate limit reached." },
+      { status: 429, headers: rateLimitHeaders(rate) },
+    );
+  }
+
+  try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     );
+    const [paymentRows, walletRows, runRows] = await Promise.all([
+      loadPaymentRows(supabase),
+      supabase.from("user_wallets").select("address"),
+      supabase.from("run_receipts").select("status, budget_usdc, spent_usdc, payer_kind, payload, created_at"),
+    ]);
 
-    const { count } = await supabase
-      .from("payment_events")
-      .select("*", { count: "exact", head: true });
-
-    const proofSelect =
-      "amount_usdc, payer, endpoint, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, created_at";
-
-    const proofQuery = await supabase
-      .from("payment_events")
-      .select(proofSelect)
-      .order("created_at", { ascending: false })
-      .limit(5000);
-    let rows: any[] | null = proofQuery.data;
-    let error = proofQuery.error;
-
-    if (error && isSettlementProofColumnError(error.message)) {
-      const fallback = await supabase
-        .from("payment_events")
-        .select("amount_usdc, payer, endpoint, gateway_tx, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5000);
-      rows = fallback.data;
-      error = fallback.error;
+    if (paymentRows.error) throw paymentRows.error;
+    if (walletRows.error && !/user_wallets|relation|does not exist/i.test(walletRows.error.message)) {
+      throw walletRows.error;
+    }
+    if (runRows.error && !/run_receipts|relation|does not exist/i.test(runRows.error.message)) {
+      throw runRows.error;
     }
 
-    if (error) throw error;
-
-    const all = rows ?? [];
-    const total = count ?? all.length;
-    const totalUsdc = all.reduce((s, r) => s + (parseFloat(r.amount_usdc) || 0), 0);
-    const payerSet = new Set(all.map((r) => r.payer));
-    const payers = payerSet.size;
-    const avg = all.length ? totalUsdc / all.length : 0;
-
-    const recent = all.slice(0, 8).map(normalizeRecentPayment);
-
-    // Self-funded wallets — an honest, non-gameable traction signal: a visitor's
-    // own generated wallet that ACTUALLY settled a payment (so merely clicking
-    // "generate" without faucet'ing doesn't inflate the count). Best-effort: the
-    // table may not exist on older deployments.
-    let onboardedWallets = 0;
-    try {
-      const { data: wallets } = await supabase.from("user_wallets").select("address");
-      const owned = new Set((wallets ?? []).map((w) => (w.address as string)?.toLowerCase()));
-      const paid = new Set<string>();
-      for (const addr of payerSet) {
-        if (typeof addr === "string" && owned.has(addr.toLowerCase())) paid.add(addr.toLowerCase());
-      }
-      onboardedWallets = paid.size;
-    } catch {
-      // ignore — optional feature
-    }
+    const payments = (paymentRows.data ?? []) as PaymentRow[];
+    const payerSet = new Set(
+      payments
+        .map((row) => row.payer?.trim().toLowerCase())
+        .filter((payer): payer is string => Boolean(payer)),
+    );
+    const walletAddresses = new Set(
+      (walletRows.data ?? [])
+        .map((row) => row.address?.trim().toLowerCase())
+        .filter((address): address is string => Boolean(address)),
+    );
+    const houseAddress = safeHouseAddress();
+    const paymentTotals = aggregatePayments(payments, walletAddresses, houseAddress);
+    const runs = aggregateRuns((runRows.data ?? []) as RunRow[]);
+    const recent = payments.slice(0, 8).map(normalizeRecentPayment);
+    const last24h = aggregatePayments(
+      payments.filter((row) => Date.now() - Date.parse(row.created_at) <= WINDOW_SECONDS * 1000),
+      walletAddresses,
+      houseAddress,
+    );
+    const paidVisitorWallets = new Set(
+      [...payerSet].filter((payer) => walletAddresses.has(payer)),
+    );
 
     return NextResponse.json(
-      { totalPayments: total, totalUsdc, avgUsdc: avg, distinctPayers: payers, onboardedWallets, recent },
+      {
+        statsVersion: "2026-08-10",
+        totalPayments: paymentTotals.payments,
+        totalAtomicUsdc: paymentTotals.atomic.toString(),
+        totalUsdc: atomicToNumber(paymentTotals.atomic),
+        avgUsdc: paymentTotals.payments ? atomicToNumber(paymentTotals.atomic) / paymentTotals.payments : 0,
+        distinctPayers: payerSet.size,
+        onboardedWallets: paidVisitorWallets.size,
+        actorCategories: paymentTotals.actorCategories,
+        completedTasks: runs.completed,
+        costPerCompletedTaskUsdc: runs.completed ? atomicToNumber(runs.spent) / runs.completed : 0,
+        budgetUtilization: runs.budget > BigInt(0) ? Number(runs.spent * BigInt(10000) / runs.budget) / 10000 : 0,
+        runActorCategories: runs.actorCategories,
+        last24h: {
+          payments: last24h.payments,
+          totalAtomicUsdc: last24h.atomic.toString(),
+          totalUsdc: atomicToNumber(last24h.atomic),
+          actorCategories: last24h.actorCategories,
+        },
+        recent,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {
     return NextResponse.json(
-      { totalPayments: 0, totalUsdc: 0, avgUsdc: 0, distinctPayers: 0, onboardedWallets: 0, recent: [], error: (err as Error).message },
-      { headers: { "Cache-Control": "no-store" } },
+      { error: "Stats are temporarily unavailable." },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
 
-function normalizeRecentPayment(row: any) {
-  const classified = classifySettlementReference(
-    row.settlement_reference ?? row.gateway_tx,
-  );
+type PaymentRow = {
+  amount_usdc: string;
+  amount_atomic?: string | null;
+  payer: string | null;
+  endpoint: string;
+  gateway_tx: string | null;
+  settlement_reference?: string | null;
+  settlement_kind?: string | null;
+  settlement_status?: string | null;
+  arc_tx_hash?: string | null;
+  arc_chain_id?: number | null;
+  arc_block_number?: string | number | null;
+  arc_confirmed_at?: string | null;
+  created_at: string;
+};
 
+async function loadPaymentRows(supabase: SupabaseClient) {
+  const select =
+    "amount_usdc, amount_atomic, payer, endpoint, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, created_at";
+  const result = await loadAllPayments(supabase, select);
+  if (!result.error || !/amount_atomic|facilitator_|settlement_|arc_tx_hash/i.test(result.error.message)) return result;
+  return loadAllPayments(supabase, "amount_usdc, payer, endpoint, gateway_tx, created_at");
+}
+
+async function loadAllPayments(supabase: SupabaseClient, select: string) {
+  const pageSize = 1000;
+  const data: PaymentRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const result = await supabase
+      .from("payment_events")
+      .select(select)
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (result.error) return { data: null, error: result.error };
+    const page = (result.data ?? []) as unknown as PaymentRow[];
+    data.push(...page);
+    if (page.length < pageSize) return { data, error: null };
+  }
+}
+
+function aggregatePayments(rows: PaymentRow[], wallets: Set<string>, houseAddress: string | null) {
+  let atomic = BigInt(0);
+  const actorCategories = { house: 0, visitor: 0, externalX402: 0 };
+  for (const row of rows) {
+    atomic += rowAmountAtomic(row);
+    const payer = row.payer?.trim().toLowerCase();
+    if (payer && houseAddress && payer === houseAddress) actorCategories.house += 1;
+    else if (payer && wallets.has(payer)) actorCategories.visitor += 1;
+    else actorCategories.externalX402 += 1;
+  }
+  return { payments: rows.length, atomic, actorCategories };
+}
+
+type RunRow = {
+  status?: string | null;
+  budget_usdc?: string | number | null;
+  spent_usdc?: string | number | null;
+  payer_kind?: string | null;
+  payload?: Record<string, unknown> | null;
+};
+
+function aggregateRuns(rows: RunRow[]) {
+  let completed = 0;
+  let spent = BigInt(0);
+  let budget = BigInt(0);
+  const actorCategories = { house: 0, visitor: 0, trustedAgent: 0 };
+  for (const row of rows) {
+    if (row.status && row.status !== "completed") continue;
+    if (row.payload?.kind === "comparison") continue;
+    completed += 1;
+    spent += decimalToAtomic(row.spent_usdc);
+    budget += decimalToAtomic(row.budget_usdc);
+    const kind = String(row.payer_kind ?? "house-wallet");
+    if (kind === "visitor-wallet") actorCategories.visitor += 1;
+    else if (kind === "trusted-agent") actorCategories.trustedAgent += 1;
+    else actorCategories.house += 1;
+  }
+  return { completed, spent, budget, actorCategories };
+}
+
+function rowAmountAtomic(row: PaymentRow) {
+  if (typeof row.amount_atomic === "string" && /^\d+$/.test(row.amount_atomic)) return BigInt(row.amount_atomic);
+  return decimalToAtomic(row.amount_usdc);
+}
+
+function decimalToAtomic(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+(\.\d+)?$/.test(text)) return BigInt(0);
+  const [whole, fraction = ""] = text.split(".");
+  return BigInt(whole) * MICRO_USDC + BigInt((fraction + "000000").slice(0, 6));
+}
+
+function atomicToNumber(value: bigint) {
+  return Number(value) / Number(MICRO_USDC);
+}
+
+function safeHouseAddress() {
+  try {
+    return getHouseAddress().toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRecentPayment(row: PaymentRow) {
+  const classified = classifySettlementReference(row.settlement_reference ?? row.gateway_tx);
   return {
-    amount: parseFloat(row.amount_usdc) || 0,
+    amount: atomicToNumber(rowAmountAtomic(row)),
     endpoint: row.endpoint,
     tx: row.gateway_tx,
-    settlementReference:
-      row.settlement_reference ?? classified.settlementReference,
+    settlementReference: row.settlement_reference ?? classified.settlementReference,
     settlementKind: row.settlement_kind ?? classified.settlementKind,
     settlementStatus: row.settlement_status ?? classified.settlementStatus,
     arcTxHash: row.arc_tx_hash ?? classified.arcTxHash,
-    arcChainId:
-      row.arc_chain_id ??
-      (classified.arcTxHash ? ARC_TESTNET_CHAIN_ID : null),
-    arcBlockNumber:
-      row.arc_block_number === undefined || row.arc_block_number === null
-        ? null
-        : String(row.arc_block_number),
+    arcChainId: row.arc_chain_id ?? (classified.arcTxHash ? ARC_TESTNET_CHAIN_ID : null),
+    arcBlockNumber: row.arc_block_number == null ? null : String(row.arc_block_number),
     arcConfirmedAt: row.arc_confirmed_at ?? null,
     at: row.created_at,
   };
-}
-
-function isSettlementProofColumnError(message: string) {
-  return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
-    message,
-  );
 }

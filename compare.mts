@@ -40,6 +40,9 @@ results.push(await runBaseline({ strategy: "cheapest", ...common, onEvent: fmt }
 console.log(`\n-- buy-by-quality baseline --`);
 results.push(await runBaseline({ strategy: "quality", ...common, onEvent: fmt }));
 
+console.log(`\n-- preview-aware heuristic baseline --`);
+results.push(await runBaseline({ strategy: "preview", ...common, onEvent: fmt }));
+
 // --- Comparison table ---
 const W = { label: 16, spent: 9, buys: 5, facts: 6, coverage: 13, flag: 13 };
 const displayLabel = (r: RunResult, i: number) => (i === 0 ? "reasoning-agent" : r.label);

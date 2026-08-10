@@ -1,6 +1,8 @@
 import { runResearchAgent } from "@/lib/agent";
+import { benchmarkAgentRequest, parseAgentBody } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
-import { guardAgentRun } from "@/lib/agent-access";
+import { guardAgentRun, payerKindForActor } from "@/lib/agent-access";
+import { cruxCanonicalOrigin } from "@/lib/crux-origin";
 import { createNdjsonWriter, ndjsonError, ndjsonResponse } from "@/lib/ndjson";
 import { agentIdempotencyScope, requestIdempotencyKey } from "@/lib/run-idempotency";
 import { replayRunReceipt, runReceiptUrl } from "@/lib/run-replay";
@@ -24,25 +26,30 @@ export const maxDuration = 60;
  * The agent pays REAL USDC (Arc testnet) for each purchase; purchases settle
  * through Circle Gateway and carry settlement ids for the receipt.
  */
-export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const topic = url.searchParams.get("topic") ?? "Northwind Logistics";
-  const model = url.searchParams.get("model") ?? "anthropic/claude-haiku-4.5";
-  const budget = parseFloat(url.searchParams.get("budget") ?? "0.05");
-  const seed = url.searchParams.get("seed") ?? "demo";
-  const baseUrl = url.origin;
-  const idempotencyKey = requestIdempotencyKey(req, url);
+export async function GET() {
+  return ndjsonError("Agent runs require POST with an Idempotency-Key header.", 405, {
+    Allow: "POST",
+  });
+}
+
+export async function POST(req: Request) {
+  const parsed = benchmarkAgentRequest.safeParse(await parseAgentBody(req));
+  if (!parsed.success) return ndjsonError("Invalid benchmark run request.", 400);
+  const { topic, model, budget, seed } = parsed.data;
+  const baseUrl = cruxCanonicalOrigin(req);
+  const idempotencyKey = requestIdempotencyKey(req);
+  if (!idempotencyKey) {
+    return ndjsonError("Idempotency-Key header is required for paid agent runs.", 400);
+  }
   const idempotencyScope = agentIdempotencyScope(req, "agent:run");
 
-  if (idempotencyKey) {
-    const existing = await getRunReceiptByIdempotencyKey(idempotencyScope, idempotencyKey);
-    if (existing) {
-      const replay = replayRunReceipt(existing, url.origin);
-      return ndjsonResponse(replay.body, replay.status, {
-        "Idempotency-Replayed": "true",
-        Location: runReceiptUrl(url.origin, existing.id),
-      });
-    }
+  const existing = await getRunReceiptByIdempotencyKey(idempotencyScope, idempotencyKey);
+  if (existing) {
+    const replay = replayRunReceipt(existing, baseUrl);
+    return ndjsonResponse(replay.body, replay.status, {
+      "Idempotency-Replayed": "true",
+      Location: runReceiptUrl(baseUrl, existing.id),
+    });
   }
 
   const guard = await guardAgentRun(req, {
@@ -52,6 +59,7 @@ export async function GET(req: Request) {
     publicMaxBudgetUsdc: 0.05,
   });
   if (!guard.ok) return ndjsonError(guard.message, guard.status, guard.headers);
+  const payerKind = payerKindForActor(guard.actorKind);
 
   let run;
   try {
@@ -60,7 +68,7 @@ export async function GET(req: Request) {
       subject: topic,
       model,
       budgetUsdc: budget,
-      payerKind: "house-wallet",
+      payerKind,
       idempotencyScope,
       idempotencyKey,
       payload: {
@@ -89,10 +97,10 @@ export async function GET(req: Request) {
   }
   if (run.replay && run.receipt) {
     await guard.release();
-    const replay = replayRunReceipt(run.receipt, url.origin);
+    const replay = replayRunReceipt(run.receipt, baseUrl);
     return ndjsonResponse(replay.body, replay.status, {
       "Idempotency-Replayed": "true",
-      Location: runReceiptUrl(url.origin, run.receipt.id),
+      Location: runReceiptUrl(baseUrl, run.receipt.id),
     });
   }
 
@@ -125,7 +133,7 @@ export async function GET(req: Request) {
             model,
             budgetUsdc: budget,
             spentUsdc: result.spent,
-            payerKind: "house-wallet",
+            payerKind,
             payload: { result, score, events, seed, budget },
           });
         } catch (receiptErr) {
@@ -151,7 +159,7 @@ export async function GET(req: Request) {
           result,
           score,
           receiptId,
-          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, url.origin).toString() : null,
+          receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, baseUrl).toString() : null,
         });
       } catch (err) {
         const message = alertErrorMessage(err);
@@ -179,7 +187,7 @@ export async function GET(req: Request) {
               model,
               budgetUsdc: budget,
               spentUsdc,
-              payerKind: "house-wallet",
+              payerKind,
               payload: { status: "failed", events, seed, budget, error: message },
             },
             message,

@@ -4,7 +4,7 @@ export async function GET(req: NextRequest) {
   const origin = new URL(req.url).origin;
   const publicHouseWalletRunsEnabled = envBool(
     "CRUX_PUBLIC_AGENT_RUNS_ENABLED",
-    true,
+    false,
   );
 
   return NextResponse.json({

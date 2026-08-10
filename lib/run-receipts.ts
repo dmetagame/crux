@@ -10,7 +10,7 @@ export interface SaveRunReceiptInput {
   model?: string;
   budgetUsdc: number;
   spentUsdc: number;
-  payerKind: "house-wallet" | "visitor-wallet";
+  payerKind: "house-wallet" | "visitor-wallet" | "trusted-agent";
   payload: Record<string, unknown>;
 }
 
@@ -35,7 +35,7 @@ export interface StartRunReceiptInput {
   subject: string;
   model?: string;
   budgetUsdc: number;
-  payerKind: "house-wallet" | "visitor-wallet";
+  payerKind: "house-wallet" | "visitor-wallet" | "trusted-agent";
   payload?: Record<string, unknown>;
   idempotencyScope?: string | null;
   idempotencyKey?: string | null;

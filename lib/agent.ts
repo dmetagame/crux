@@ -10,11 +10,16 @@ import { generateText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { catalog, getPreview } from "./marketplace.ts";
+import { payWithinBudget } from "./paid-purchase.ts";
+import { formatUsdcAtomic, usdcAtomicToNumber, usdcNumberToAtomic } from "./usdc.ts";
+import { validateSourcedClaims, type SourcedClaim } from "./claims.ts";
 
 export interface LedgerEntry {
   n: number;
   sourceId: string;
   price: string;
+  listedPrice: string;
+  amountAtomic: string;
   delivered: boolean;
   rationale: string;
   /** Gateway settlement reference, or an Arc tx hash when Gateway exposes one. */
@@ -28,6 +33,8 @@ export type AgentEvent =
       kind: "purchase";
       sourceId: string;
       price: string;
+      listedPrice: string;
+      amountAtomic: string;
       delivered: boolean;
       rationale: string;
       tx?: string;
@@ -38,6 +45,7 @@ export interface RunResult {
   model: string;
   brief: string;
   factsClaimed: string[];
+  claims: SourcedClaim[];
   ledger: LedgerEntry[];
   spent: number;
   steps: number;
@@ -75,11 +83,15 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
   const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: buyerKey });
   await ensureGatewayFunded(gateway, budget);
 
-  let spent = 0;
+  const budgetAtomic = usdcNumberToAtomic(budget);
+  let spentAtomic = BigInt(0);
   let previews = 0;
   const ledger: LedgerEntry[] = [];
+  const purchased = new Set<string>();
+  const deliveredSources = new Set<string>();
   let finalBrief = "";
   let finalFacts: string[] = [];
+  let finalClaims: SourcedClaim[] = [];
 
   const tools = {
     list_marketplace: tool({
@@ -104,7 +116,10 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
     check_budget: tool({
       description: "Check remaining USDC budget and the spend ledger so far. Free to call.",
       inputSchema: z.object({}),
-      execute: async () => ({ budget, spent: round(spent), remaining: round(budget - spent), ledger }),
+      execute: async () => {
+        const spent = usdcAtomicToNumber(spentAtomic);
+        return { budget, spent: round(spent), remaining: round(budget - spent), ledger };
+      },
     }),
     purchase: tool({
       description:
@@ -118,28 +133,57 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
       execute: async ({ sourceId, rationale }) => {
         const meta = catalog().find((c) => c.id === sourceId);
         if (!meta) return { error: `Unknown source: ${sourceId}` };
-        if (spent + meta.priceUsdc > budget + 1e-9) {
-          return { error: `Refused: would exceed budget. Remaining ${round(budget - spent)} USDC, price ${meta.priceUsdc}.` };
-        }
+        if (purchased.has(sourceId)) return { error: `Refused: ${sourceId} was already purchased in this run.` };
         const url = `${baseUrl}${meta.purchaseUrl}?topic=${encodeURIComponent(topic)}&seed=${encodeURIComponent(seed)}`;
-        const res = await gateway.pay(url, { method: "GET" });
-        const data = res.data as { delivered: boolean; content: string };
-        const tx = (res as { transaction?: string }).transaction || undefined;
-        spent += meta.priceUsdc;
-        ledger.push({ n: ledger.length + 1, sourceId, price: meta.price, delivered: data.delivered, rationale, tx });
-        emit({ kind: "purchase", sourceId, price: meta.price, delivered: data.delivered, rationale, tx });
-        return { delivered: data.delivered, content: data.content, spentSoFar: round(spent), remaining: round(budget - spent) };
+        const res = await payWithinBudget<{ delivered: boolean; content: string }>(
+          gateway,
+          url,
+          budgetAtomic - spentAtomic,
+        );
+        purchased.add(sourceId);
+        if (res.data.delivered) deliveredSources.add(sourceId);
+        spentAtomic += res.amount;
+        const price = `$${formatUsdcAtomic(res.amount)}`;
+        const entry: LedgerEntry = {
+          n: ledger.length + 1,
+          sourceId,
+          price,
+          listedPrice: meta.price,
+          amountAtomic: res.amount.toString(),
+          delivered: res.data.delivered,
+          rationale,
+          tx: res.transaction || undefined,
+        };
+        ledger.push(entry);
+        emit({ kind: "purchase", ...entry });
+        const spent = usdcAtomicToNumber(spentAtomic);
+        return {
+          sourceId,
+          delivered: res.data.delivered,
+          content: res.data.content,
+          spentSoFar: round(spent),
+          remaining: round(budget - spent),
+        };
       },
     }),
     submit_brief: tool({
-      description: "Submit the final due-diligence brief and finish. Ground every claim only in purchased content.",
+      description:
+        "Submit the final due-diligence brief and finish. Every claim must name one or more purchased source IDs " +
+        "and include a short evidence note from delivered content. Claims without delivered source evidence are rejected.",
       inputSchema: z.object({
         brief: z.string().describe("Concise due-diligence brief grounded only in what you purchased."),
-        factsClaimed: z.array(z.string()).describe("The key facts you are confident you established."),
+        claims: z.array(z.object({
+          text: z.string().min(1).max(500),
+          sourceIds: z.array(z.string().min(1)).min(1).max(5),
+          evidence: z.string().min(1).max(800),
+        })).min(1).max(20).describe("Claims with purchased source IDs and evidence notes."),
       }),
-      execute: async ({ brief, factsClaimed }) => {
+      execute: async ({ brief, claims }) => {
+        const validationError = validateSourcedClaims(claims, deliveredSources);
+        if (validationError) return { ok: false, error: validationError };
         finalBrief = brief;
-        finalFacts = factsClaimed;
+        finalClaims = claims;
+        finalFacts = claims.map((claim) => claim.text);
         return { ok: true };
       },
     }),
@@ -162,7 +206,8 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
     `- Every purchase costs real USDC and is irreversible. Give a one-line rationale for each.\n` +
     `- If an unreliable source returns nothing useful, adapt — don't blindly re-buy it.\n` +
     `- Stop buying once you can write a credible brief; leftover budget is a good outcome.\n` +
-    `- Ground every claim ONLY in content you actually purchased. Do not invent facts. Treat rumor/` +
+    `- Ground every claim ONLY in content you actually purchased. Do not invent facts. Each submitted claim must ` +
+    `include the exact purchased sourceId and a short evidence note. Treat rumor/` +
     `unverified sources with skepticism and corroborate red flags where you can.\n\n` +
     `When finished, call submit_brief with the brief and the key facts you established.`;
 
@@ -174,13 +219,18 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
     stopWhen: stepCountIs(30),
   });
 
+  if (!finalBrief || finalClaims.length === 0) {
+    throw new Error("Agent finished without submitting a sourced brief.");
+  }
+
   return {
     label: `agent (${model})`,
     model,
     brief: finalBrief,
     factsClaimed: finalFacts,
+    claims: finalClaims,
     ledger,
-    spent: round(spent),
+    spent: round(usdcAtomicToNumber(spentAtomic)),
     steps: result.steps.length,
     tokens: result.usage?.totalTokens ?? 0,
     previews,

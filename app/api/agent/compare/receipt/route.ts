@@ -17,7 +17,7 @@ type ComparisonBody = {
   events?: unknown[];
 };
 
-const COMPARISON_KEYS = ["reasoning-agent", "buy-cheapest", "buy-by-quality"] as const;
+const COMPARISON_KEYS = ["reasoning-agent", "buy-cheapest", "buy-by-quality", "preview-aware-heuristic"] as const;
 const MAX_BODY_CHARS = 250_000;
 const MAX_EVENTS = 120;
 
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     if (!results) {
       return NextResponse.json(
-        { error: "results must include reasoning-agent, buy-cheapest, and buy-by-quality outputs." },
+        { error: "results must include the reasoning agent and all three baseline outputs." },
         { status: 400 },
       );
     }

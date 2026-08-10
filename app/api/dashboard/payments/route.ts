@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
   );
 
   const proofSelect =
-    "id, created_at, endpoint, payer, amount_usdc, network, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, settlement_checked_at";
+    "id, created_at, endpoint, payer, amount_usdc, amount_atomic, network, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, settlement_checked_at, facilitator_requirements, facilitator_verify, facilitator_settle";
 
   const proofQuery = await supabase
     .from("payment_events")
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 }
 
 function isSettlementProofColumnError(message: string) {
-  return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
+  return /amount_atomic|facilitator_|settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
     message,
   );
 }

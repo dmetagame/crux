@@ -120,14 +120,14 @@ their own visitor wallet, or use a scoped trusted-agent key.
 
 ### 6. Show Visitor Wallet Path
 
-Switch back to visitor mode. Enter an email and click "Get wallet".
+Switch back to visitor mode and click "Generate testnet wallet".
 
 Narration:
 
 ```text
-Visitors and external users are not forced onto the house wallet. The same email
-recovers the same Arc testnet wallet, and once funded, runs are attributed to
-that wallet as a distinct payer.
+Visitors and external users are not forced onto the house wallet. Crux creates a
+fresh hosted Arc testnet wallet and returns a short-lived capability token. Once
+the wallet is funded, runs are attributed to it as a distinct payer.
 ```
 
 Do not wait for faucet funding during the main demo unless you already have a

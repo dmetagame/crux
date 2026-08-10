@@ -1,12 +1,10 @@
 import { sha256Hex } from "@/lib/access-crypto";
 import { clientIp } from "@/lib/rate-limit";
 
-export function requestIdempotencyKey(req: Request, url: URL) {
+export function requestIdempotencyKey(req: Request) {
   const value =
     req.headers.get("idempotency-key") ??
-    req.headers.get("x-idempotency-key") ??
-    url.searchParams.get("idempotencyKey") ??
-    url.searchParams.get("runKey");
+    req.headers.get("x-idempotency-key");
   const key = value?.trim();
   if (!key) return null;
   return key.slice(0, 200);

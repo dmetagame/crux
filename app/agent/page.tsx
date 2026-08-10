@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Copy, ExternalLink, LogIn, ReceiptText, RefreshCw, ShieldCheck, UserRound, Wallet } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import CruxMark from "@/components/crux-mark";
 import PageMotion from "@/components/page-motion";
 import TopoBackground from "@/components/topo-background";
@@ -32,6 +32,7 @@ interface RunResult {
   model: string;
   brief: string;
   factsClaimed: string[];
+  claims?: { text: string; sourceIds: string[]; evidence: string }[];
   ledger: LedgerEntry[];
   spent: number;
   steps: number;
@@ -67,6 +68,9 @@ interface Stats {
   avgUsdc: number;
   distinctPayers: number;
   onboardedWallets?: number;
+  completedTasks?: number;
+  costPerCompletedTaskUsdc?: number;
+  budgetUtilization?: number;
   recent?: RecentPayment[];
 }
 
@@ -209,6 +213,7 @@ function AgentPageFallback() {
 }
 
 function AgentPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<"real" | "benchmark">("real");
   const [stats, setStats] = useState<Stats | null>(null);
@@ -235,13 +240,12 @@ function AgentPageContent() {
   const [realResult, setRealResult] = useState<RealDone | null>(null);
 
   // visitor-funded wallet lane
-  const [email, setEmail] = useState("");
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [walletStatus, setWalletStatus] = useState<WalletStatus | null>(null);
   const [walletBusy, setWalletBusy] = useState<"create" | "check" | null>(null);
   const [walletErr, setWalletErr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  // Use the visitor's own wallet only once it's funded; otherwise the house wallet.
+  // Use the visitor wallet only after it is funded and authorized.
   const useOwnWallet = !!(wallet?.walletToken && walletStatus?.funded);
 
   useEffect(() => {
@@ -286,8 +290,6 @@ function AgentPageContent() {
     try {
       const r = await fetch("/api/wallet/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() || undefined }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not create wallet");
@@ -333,9 +335,12 @@ function AgentPageContent() {
 
   function refreshStats() {
     fetch("/api/stats")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Stats unavailable");
+        return r.json();
+      })
       .then(setStats)
-      .catch(() => {});
+      .catch(() => setStats(null));
   }
 
   useEffect(() => {
@@ -361,7 +366,7 @@ function AgentPageContent() {
     if (adminSession?.authenticated) return true;
     setRole("operator");
     setErr("Sign in as admin to run from the operator wallet.");
-    window.location.href = OPERATOR_LOGIN_HREF;
+    router.push(OPERATOR_LOGIN_HREF);
     return false;
   }
 
@@ -378,21 +383,29 @@ function AgentPageContent() {
     resetRun();
     setRealResult(null);
     const shouldUseOwnWallet = role === "visitor" && useOwnWallet;
-    const walletParam = shouldUseOwnWallet ? `&walletId=${wallet!.walletId}` : "";
-    const idempotencyParam = `&idempotencyKey=${encodeURIComponent(newIdempotencyKey("real"))}`;
-    const init = shouldUseOwnWallet
-      ? { headers: { "X-Crux-Wallet-Token": wallet!.walletToken } }
-      : undefined;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Idempotency-Key": newIdempotencyKey("real"),
+    };
+    if (shouldUseOwnWallet) headers["X-Crux-Wallet-Token"] = wallet!.walletToken;
     try {
       await streamNDJSON(
-        `/api/agent/real?subject=${encodeURIComponent(nextSubject)}&budget=${REAL_BUDGET}${walletParam}${idempotencyParam}`,
+        "/api/agent/real",
         (o) => {
           if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
           else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
           else if (o.type === "error") setErr(o.message);
         },
         undefined,
-        init,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            subject: nextSubject,
+            budget: REAL_BUDGET,
+            walletId: shouldUseOwnWallet ? wallet!.walletId : null,
+          }),
+        },
       );
     } catch (e) {
       setErr((e as Error).message);
@@ -410,13 +423,24 @@ function AgentPageContent() {
     setCompare({});
     setCompareReceipt(null);
     setActive(null);
-    const idempotencyParam = `&idempotencyKey=${encodeURIComponent(newIdempotencyKey("benchmark"))}`;
     try {
-      await streamNDJSON(`/api/agent/run?topic=${encodeURIComponent(topic)}&budget=${BUDGET}${idempotencyParam}`, (o) => {
-        if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
-        else if (o.type === "done") setResult({ result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
-        else if (o.type === "error") setErr(o.message);
-      });
+      await streamNDJSON(
+        "/api/agent/run",
+        (o) => {
+          if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
+          else if (o.type === "done") setResult({ result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
+          else if (o.type === "error") setErr(o.message);
+        },
+        undefined,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": newIdempotencyKey("benchmark"),
+          },
+          body: JSON.stringify({ topic, budget: BUDGET }),
+        },
+      );
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -433,33 +457,62 @@ function AgentPageContent() {
     setCompare({});
     setCompareReceipt(null);
     setActive(null);
-    const enc = encodeURIComponent(topic);
     const comparison: Record<string, Done> = {};
     const comparisonEvents: { label?: string; ev: AgentEvent }[] = [];
     const steps = [
       {
         label: "reasoning-agent",
-        url: `/api/agent/run?topic=${enc}&budget=${BUDGET}&idempotencyKey=${encodeURIComponent(newIdempotencyKey("compare-agent"))}`,
+        url: "/api/agent/run",
+        body: { topic, budget: BUDGET },
+        idempotencyKey: newIdempotencyKey("compare-agent"),
       },
-      { label: "buy-cheapest", url: `/api/agent/baseline?strategy=cheapest&topic=${enc}&budget=${BUDGET}` },
-      { label: "buy-by-quality", url: `/api/agent/baseline?strategy=quality&topic=${enc}&budget=${BUDGET}` },
+      {
+        label: "buy-cheapest",
+        url: "/api/agent/baseline",
+        body: { strategy: "cheapest", topic, budget: BUDGET },
+        idempotencyKey: newIdempotencyKey("compare-cheapest"),
+      },
+      {
+        label: "buy-by-quality",
+        url: "/api/agent/baseline",
+        body: { strategy: "quality", topic, budget: BUDGET },
+        idempotencyKey: newIdempotencyKey("compare-quality"),
+      },
+      {
+        label: "preview-aware-heuristic",
+        url: "/api/agent/baseline",
+        body: { strategy: "preview", topic, budget: BUDGET },
+        idempotencyKey: newIdempotencyKey("compare-preview"),
+      },
     ];
     try {
       for (const s of steps) {
         setActive(s.label);
-        await streamNDJSON(s.url, (o) => {
-          if (o.type === "event") {
-            const entry = { label: s.label, ev: o.event };
-            comparisonEvents.push(entry);
-            setEvents((e) => [...e, entry]);
-          }
-          else if (o.type === "done") {
-            const done = { result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl };
-            comparison[s.label] = done;
-            setCompare((c) => ({ ...c, [s.label]: done }));
-          }
-          else if (o.type === "error") setErr(o.message);
-        });
+        await streamNDJSON(
+          s.url,
+          (o) => {
+            if (o.type === "event") {
+              const entry = { label: s.label, ev: o.event };
+              comparisonEvents.push(entry);
+              setEvents((e) => [...e, entry]);
+            }
+            else if (o.type === "done") {
+              const done = { result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl };
+              comparison[s.label] = done;
+              setCompare((c) => ({ ...c, [s.label]: done }));
+            }
+            else if (o.type === "error") setErr(o.message);
+          },
+          undefined,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": s.idempotencyKey,
+            },
+            body: JSON.stringify(s.body),
+          },
+        );
       }
       const receipt = await saveComparisonReceipt(topic, comparison, comparisonEvents);
       setCompareReceipt(receipt);
@@ -472,7 +525,7 @@ function AgentPageContent() {
     }
   }
 
-  const order = ["reasoning-agent", "buy-cheapest", "buy-by-quality"];
+  const order = ["reasoning-agent", "buy-cheapest", "buy-by-quality", "preview-aware-heuristic"];
   const operatorReady = !!adminSession?.authenticated;
   const visitorReady = useOwnWallet;
   const realRunDisabled =
@@ -536,8 +589,6 @@ function AgentPageContent() {
           setRole={setRole}
           adminSession={adminSession}
           refreshAdminSession={refreshAdminSession}
-          email={email}
-          setEmail={setEmail}
           wallet={wallet}
           walletStatus={walletStatus}
           walletBusy={walletBusy}
@@ -607,7 +658,7 @@ function AgentPageContent() {
           <div className="mt-5">
             <p className="mb-3 max-w-2xl text-sm text-zinc-400">
               A controlled marketplace with a known answer key, built so no fixed heuristic wins. Run the agent, or compare
-              it against naive “buy-cheapest” / “buy-by-quality” baselines on the same budget.
+              it against two naive metadata controls and a stronger preview-aware non-LLM heuristic on the same budget.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -641,7 +692,7 @@ function AgentPageContent() {
                 disabled={running || !operatorReady}
                 className="rounded-md border border-zinc-700 bg-zinc-900/55 px-4 py-2 text-sm font-medium backdrop-blur-sm hover:border-zinc-600 disabled:opacity-50"
               >
-                {running && mode === "compare" ? "Comparing…" : "Compare vs naive baselines"}
+                {running && mode === "compare" ? "Comparing…" : "Compare vs non-LLM controls"}
               </button>
               <span className="text-xs text-zinc-500">
                 Real USDC · Arc testnet · {operatorReady ? "operator wallet" : "operator login required"} · reproducible (seed: demo)
@@ -704,7 +755,7 @@ function AgentPageContent() {
                     <span className="text-emerald-400">
                       {compare["reasoning-agent"].score.weighted}/{compare["reasoning-agent"].score.maxWeighted}
                     </span>{" "}
-                    with no false claim — previewing past the macro trap and skipping the rumor the heuristics swallowed.
+                    with no false claim — compare its cost and coverage against both naive controls and the stronger preview-aware heuristic.
                   </p>
                 )}
                 <ResultPanel done={compare["reasoning-agent"]} heading="Agent's brief" />
@@ -768,12 +819,14 @@ function UsdStat({ value, decimals = 4 }: { value: number; decimals?: number }) 
 function StatsBar({ stats }: { stats: Stats | null }) {
   const cells: { label: string; value: React.ReactNode }[] = [
     { label: "autonomous payments", value: stats ? stats.totalPayments.toLocaleString() : "—" },
-    { label: "Gateway-settled USDC", value: stats ? <UsdStat value={stats.totalUsdc} /> : "—" },
+    { label: "x402 USDC accepted", value: stats ? <UsdStat value={stats.totalUsdc} /> : "—" },
     { label: "avg tx size", value: stats ? <UsdStat value={stats.avgUsdc} /> : "—" },
     { label: "distinct payers", value: stats ? stats.distinctPayers.toLocaleString() : "—" },
+    { label: "cost / completed task", value: stats ? <UsdStat value={stats.costPerCompletedTaskUsdc ?? 0} /> : "—" },
+    { label: "budget utilization", value: stats ? `${((stats.budgetUtilization ?? 0) * 100).toFixed(1)}%` : "—" },
   ];
   return (
-    <div data-animate className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div data-animate className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
       {cells.map((c) => (
         <div key={c.label} className="rounded-lg border border-zinc-800 bg-zinc-900/55 px-4 py-3 backdrop-blur-sm">
           <div className="font-display text-2xl font-semibold tracking-tight text-zinc-100">{c.value}</div>
@@ -955,8 +1008,6 @@ function RoleWorkspacePanel({
   setRole,
   adminSession,
   refreshAdminSession,
-  email,
-  setEmail,
   wallet,
   walletStatus,
   walletBusy,
@@ -971,8 +1022,6 @@ function RoleWorkspacePanel({
   setRole: (role: WorkspaceRole) => void;
   adminSession: AdminSession | null;
   refreshAdminSession: () => Promise<void>;
-  email: string;
-  setEmail: (email: string) => void;
   wallet: WalletInfo | null;
   walletStatus: WalletStatus | null;
   walletBusy: "create" | "check" | null;
@@ -1010,7 +1059,8 @@ function RoleWorkspacePanel({
               </span>
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-zinc-500">
-              Email recovers the same stored Arc testnet wallet. Fund it at Circle faucet, then Crux pays from that balance.
+              Create a fresh Crux-hosted Arc testnet wallet. Keep its browser capability token, fund it at Circle faucet,
+              then Crux pays from that balance.
             </span>
           </span>
         </button>
@@ -1018,7 +1068,7 @@ function RoleWorkspacePanel({
         {visitorSelected && (
           <div className="space-y-3 border-t border-zinc-800 px-4 pb-4 pt-3">
             <div className="grid gap-2 text-[11px] text-zinc-500 sm:grid-cols-4">
-              {["1. Email", "2. Faucet", "3. Check", "4. Research"].map((step) => (
+              {["1. Create", "2. Faucet", "3. Check", "4. Research"].map((step) => (
                 <span key={step} className="rounded border border-zinc-800 bg-zinc-950/35 px-2 py-1 text-center">
                   {step}
                 </span>
@@ -1026,13 +1076,9 @@ function RoleWorkspacePanel({
             </div>
             {!wallet ? (
               <div className="flex flex-wrap items-center gap-2">
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="email for wallet recovery"
-                  disabled={running || walletBusy === "create"}
-                  className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-teal-500 disabled:opacity-50"
-                />
+                <p className="min-w-0 flex-1 text-xs leading-relaxed text-zinc-500">
+                  This creates a new testnet wallet. Its capability stays in this browser and expires automatically.
+                </p>
                 <button
                   type="button"
                   onClick={createWallet}
@@ -1300,6 +1346,19 @@ function ResultPanel({ done, heading = "Brief" }: { done?: Done; heading?: strin
           <ReceiptLink done={done} />
         </div>
         <div className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{result.brief || "(no brief)"}</div>
+        {!!result.claims?.length && (
+          <div className="mt-4 border-t border-zinc-800 pt-3">
+            <div className="mb-2 text-[11px] uppercase tracking-wide text-zinc-500">Claim provenance</div>
+            <div className="space-y-1.5">
+              {result.claims.slice(0, 6).map((claim, index) => (
+                <div key={`${index}-${claim.text}`} className="text-xs text-zinc-400">
+                  <span className="text-zinc-200">{claim.text}</span>
+                  <span className="text-teal-300"> · {claim.sourceIds.join(", ")}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <div className="space-y-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4 backdrop-blur-sm">

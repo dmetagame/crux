@@ -21,6 +21,7 @@ type LedgerEntry = {
   rationale: string;
   tx?: string;
 };
+type SourcedClaim = { text: string; sourceIds: string[]; evidence: string };
 
 type ReceiptEvent =
   | { kind: "preview"; sourceId: string }
@@ -83,6 +84,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const ledger = asArray(result?.ledger) as LedgerEntry[];
   const citations = asArray(result?.citations) as { sourceId: string; url: string }[];
   const brief = typeof result?.brief === "string" ? result.brief : "";
+  const claims = asArray(result?.claims) as SourcedClaim[];
   const previews = new Set(events.filter((e) => e.kind === "preview").map((e) => e.sourceId));
   const bought = new Map(ledger.map((entry) => [entry.sourceId, entry]));
   const catalog = receipt.mode === "real" ? REAL_SOURCES : SOURCES;
@@ -114,7 +116,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Verifiable Crux artifact for <span className="text-zinc-200">{receipt.subject}</span>: budget, source
-              decisions, final brief, {isComparison ? "baseline comparison, " : ""}and Gateway settlement proof.
+              decisions, final brief, {isComparison ? "baseline comparison, " : ""}and facilitator evidence.
             </p>
           </div>
           <div className="text-right text-xs text-zinc-500">
@@ -238,6 +240,20 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
               {isComparison ? "Agent final brief" : "Final brief"}
             </h2>
             <div className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-200">{brief || "(no brief captured)"}</div>
+            {claims.length > 0 && (
+              <div className="mt-4 border-t border-zinc-800 pt-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Claim provenance</div>
+                <div className="space-y-2">
+                  {claims.map((claim, index) => (
+                    <div key={`${index}-${claim.text}`} className="rounded border border-zinc-800 bg-zinc-950/30 p-2 text-xs">
+                      <div className="text-zinc-200">{claim.text}</div>
+                      <div className="mt-1 text-zinc-500">Evidence: {claim.evidence}</div>
+                      <div className="mt-1 text-teal-300">Sources: {claim.sourceIds.map(sourceName).join(", ")}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 backdrop-blur-sm">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Proof</h2>
@@ -358,9 +374,10 @@ function comparisonRowsFromPayload(payload: Record<string, unknown>): Comparison
     "reasoning-agent": "Reasoning agent",
     "buy-cheapest": "Buy cheapest",
     "buy-by-quality": "Buy by quality",
+    "preview-aware-heuristic": "Preview-aware heuristic",
   };
 
-  return ["reasoning-agent", "buy-cheapest", "buy-by-quality"]
+  return ["reasoning-agent", "buy-cheapest", "buy-by-quality", "preview-aware-heuristic"]
     .map((key) => {
       const done = asRecord(results[key]);
       const result = asRecord(done?.result);

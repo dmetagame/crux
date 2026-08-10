@@ -57,15 +57,14 @@ Useful paid surfaces:
 
 ## Option B: Visitor-Funded Research Run
 
-Use this when a user or external agent should pay from its own Arc testnet wallet.
-The same email recovers the same wallet.
+Use this when a user or external agent should pay from a Crux-hosted Arc testnet
+wallet. Wallet capability tokens expire and are intentionally not recoverable by
+email.
 
-Create or recover a wallet:
+Create a fresh wallet:
 
 ```bash
-curl -sS -X POST "$CRUX_BASE_URL/api/wallet/create" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"agent@example.com"}'
+curl -sS -X POST "$CRUX_BASE_URL/api/wallet/create"
 ```
 
 Response shape:
@@ -88,9 +87,11 @@ curl -sS "$CRUX_BASE_URL/api/wallet/status?walletId=$WALLET_ID" \
 Run research from that wallet:
 
 ```bash
-curl -N "$CRUX_BASE_URL/api/agent/real?subject=Coinbase&budget=0.03&walletId=$WALLET_ID" \
+curl -N -X POST "$CRUX_BASE_URL/api/agent/real" \
+  -H "Content-Type: application/json" \
   -H "X-Crux-Wallet-Token: $WALLET_TOKEN" \
-  -H "Idempotency-Key: visitor-coinbase-001"
+  -H "Idempotency-Key: visitor-coinbase-001" \
+  -d '{"subject":"Coinbase","budget":0.03,"walletId":"'$WALLET_ID'"}'
 ```
 
 Response is NDJSON:
@@ -110,17 +111,21 @@ default because these endpoints can spend the house wallet.
 ```bash
 export CRUX_AGENT_KEY=crux_agent_...
 
-curl -N "$CRUX_BASE_URL/api/agent/real?subject=Coinbase&budget=0.03" \
+curl -N -X POST "$CRUX_BASE_URL/api/agent/real" \
+  -H "Content-Type: application/json" \
   -H "Authorization: Bearer $CRUX_AGENT_KEY" \
-  -H "Idempotency-Key: trusted-coinbase-001"
+  -H "Idempotency-Key: trusted-coinbase-001" \
+  -d '{"subject":"Coinbase","budget":0.03}'
 ```
 
 Benchmark runner:
 
 ```bash
-curl -N "$CRUX_BASE_URL/api/agent/run?topic=Northwind%20Logistics&budget=0.05" \
+curl -N -X POST "$CRUX_BASE_URL/api/agent/run" \
+  -H "Content-Type: application/json" \
   -H "Authorization: Bearer $CRUX_AGENT_KEY" \
-  -H "Idempotency-Key: trusted-benchmark-001"
+  -H "Idempotency-Key: trusted-benchmark-001" \
+  -d '{"topic":"Northwind Logistics","budget":0.05}'
 ```
 
 Without a key, production returns:
@@ -135,7 +140,7 @@ Send `Idempotency-Key` on runner requests. Retrying the same key for the same
 caller replays the existing run instead of spending twice.
 
 Completed runs return `receiptUrl`. Receipts include budget, purchases, rationales,
-result, and settlement proof metadata.
+result, and Circle facilitator evidence metadata.
 
 Poll a receipt/run:
 

@@ -13,7 +13,9 @@ export function hasWalletEncryptionKey() {
 }
 
 export function shouldRequireEncryptedWallets() {
-  return /^true$/i.test(process.env.CRUX_WALLET_REQUIRE_ENCRYPTED_WALLETS?.trim() ?? "");
+  const configured = process.env.CRUX_WALLET_REQUIRE_ENCRYPTED_WALLETS?.trim();
+  if (configured) return /^true$/i.test(configured);
+  return process.env.NODE_ENV === "production";
 }
 
 export function encryptWalletPrivateKey(privateKey: HexPrivateKey) {

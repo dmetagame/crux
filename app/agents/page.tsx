@@ -24,21 +24,23 @@ curl ${baseUrl}/api/marketplace`,
   },
   {
     title: "Create a visitor wallet",
-    body: `curl -sS -X POST "${baseUrl}/api/wallet/create" \\
-  -H "Content-Type: application/json" \\
-  -d '{"email":"agent@example.com"}'`,
+    body: `curl -sS -X POST "${baseUrl}/api/wallet/create"`,
   },
   {
     title: "Run from a visitor wallet",
-    body: `curl -N "${baseUrl}/api/agent/real?subject=Coinbase&budget=0.03&walletId=$WALLET_ID" \\
+    body: `curl -N -X POST "${baseUrl}/api/agent/real" \\
+  -H "Content-Type: application/json" \\
   -H "X-Crux-Wallet-Token: $WALLET_TOKEN" \\
-  -H "Idempotency-Key: visitor-coinbase-001"`,
+  -H "Idempotency-Key: visitor-coinbase-001" \\
+  -d '{"subject":"Coinbase","budget":0.03,"walletId":"'$WALLET_ID'"}'`,
   },
   {
     title: "Run as a trusted agent",
-    body: `curl -N "${baseUrl}/api/agent/real?subject=Coinbase&budget=0.03" \\
+    body: `curl -N -X POST "${baseUrl}/api/agent/real" \\
+  -H "Content-Type: application/json" \\
   -H "Authorization: Bearer $CRUX_AGENT_KEY" \\
-  -H "Idempotency-Key: trusted-coinbase-001"`,
+  -H "Idempotency-Key: trusted-coinbase-001" \\
+  -d '{"subject":"Coinbase","budget":0.03}'`,
   },
 ];
 
@@ -60,7 +62,7 @@ export default function AgentsPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
               Crux lets external agents buy individual x402 resources, run research from a
-              visitor-funded Arc wallet, or use a scoped trusted-agent key for house-wallet runs.
+              Crux-hosted visitor-funded Arc wallet, or use a scoped trusted-agent key for house-wallet runs.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -81,7 +83,7 @@ export default function AgentsPage() {
             icon={<Wallet className="h-4 w-4" aria-hidden="true" />}
             title="Visitor wallet"
             badge="self-funded"
-            text="Create or recover a stored Arc testnet wallet by email and run research from that balance."
+            text="Create a fresh Crux-hosted Arc testnet wallet, fund it yourself, and run research from that balance."
           />
           <ModeCard
             icon={<KeyRound className="h-4 w-4" aria-hidden="true" />}
@@ -121,7 +123,7 @@ export default function AgentsPage() {
             <h2 className="text-sm font-semibold text-zinc-100">Runner Output</h2>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-            Runner endpoints stream NDJSON events and finish with a durable <Endpoint>receiptUrl</Endpoint>.
+            Runner endpoints accept POST JSON, stream NDJSON events, and finish with a durable <Endpoint>receiptUrl</Endpoint>.
             Receipts show budget, previews, purchases, rationale, result, and settlement proof metadata.
           </p>
           <pre className="mt-3 overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950/70 p-3 text-xs leading-relaxed text-zinc-300">

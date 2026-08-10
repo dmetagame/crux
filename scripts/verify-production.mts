@@ -11,8 +11,23 @@ const baseUrl = normalizeBaseUrl(
     process.env.NEXT_PUBLIC_APP_URL ||
     DEFAULT_BASE_URL,
 );
+const expectedGitSha = process.env.CRUX_EXPECTED_GIT_SHA?.trim() || null;
 
 const checks: Check[] = [
+  {
+    name: "deployment version",
+    path: "/api/version",
+    expect: (res, body) => {
+      expectStatus(res, 200);
+      const json = parseJson(body);
+      if (typeof json.gitSha !== "string" || json.gitSha.length < 7) {
+        throw new Error("deployment did not expose a git SHA");
+      }
+      if (expectedGitSha && !json.gitSha.startsWith(expectedGitSha) && !expectedGitSha.startsWith(json.gitSha)) {
+        throw new Error(`expected deployment SHA ${expectedGitSha}, got ${json.gitSha}`);
+      }
+    },
+  },
   {
     name: "marketplace catalog",
     path: "/api/marketplace",
@@ -83,7 +98,15 @@ const checks: Check[] = [
   },
   {
     name: "public agent runner disabled",
-    path: "/api/agent/run?budget=999",
+    path: "/api/agent/run",
+    init: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": `production-smoke-${Date.now()}`,
+      },
+      body: JSON.stringify({ topic: "Northwind Logistics", budget: 0.05 }),
+    },
     expect: (res, body) => {
       if (res.status === 503) {
         throw new Error("agent access controls are unavailable");

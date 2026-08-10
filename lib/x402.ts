@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
+import { formatUsdcAtomic } from "@/lib/usdc";
 import { getSellerAddress } from "@/lib/wallet-keys";
 
 // Arc Testnet contract addresses (from @circle-fin/x402-batching SDK)
@@ -223,9 +224,8 @@ export function withGateway(
       }
 
       // Record payment event in Supabase
-      const amountUsdc = (
-        Number(requirements.amount) / 1e6
-      ).toString();
+      const amountAtomic = requirements.amount;
+      const amountUsdc = formatUsdcAtomic(BigInt(amountAtomic));
       const payer = settleResult.payer ?? verifyResult.payer ?? "unknown";
 
       const settlementProof = await buildSettlementProofColumns(
@@ -235,10 +235,24 @@ export function withGateway(
         endpoint,
         payer,
         amount_usdc: amountUsdc,
+        amount_atomic: amountAtomic,
         network: requirements.network,
         gateway_tx: settlementProof.settlement_reference,
         ...settlementProof,
-        raw: { requirements, settleResult, settlementProof },
+        facilitator_requirements: requirements,
+        facilitator_verify: {
+          isValid: verifyResult.isValid,
+          invalidReason: verifyResult.invalidReason ?? null,
+          payer: verifyResult.payer ?? null,
+        },
+        facilitator_settle: {
+          success: settleResult.success,
+          errorReason: settleResult.errorReason ?? null,
+          payer: settleResult.payer ?? null,
+          transaction: settleResult.transaction ?? null,
+          network: settleResult.network ?? null,
+        },
+        raw: { requirements, verifyResult, settleResult, settlementProof },
       };
 
       const supabase = getSupabase();
@@ -323,7 +337,7 @@ export function withGateway(
 }
 
 function isSettlementProofColumnError(message: string) {
-  return /settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
+  return /amount_atomic|facilitator_|settlement_|arc_tx_hash|arc_chain_id|arc_block_number|arc_confirmed_at/.test(
     message,
   );
 }
