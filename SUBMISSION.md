@@ -31,6 +31,7 @@ metadata, with ArcScan links when a real Arc transaction hash is available.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
 ## Golden receipts
+- Fresh x402 facilitator proof: https://crux-khaki.vercel.app/runs/f0834987-c823-4b62-917c-9b7b3ed964cc
 - Public-company spend decision, Coinbase: https://crux-khaki.vercel.app/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c
 - Private-company spend decision, OpenAI: https://crux-khaki.vercel.app/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c
 - Scored benchmark, Northwind Logistics: https://crux-khaki.vercel.app/runs/9859fecb-488b-478d-a5bc-fec3899d9229

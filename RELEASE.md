@@ -17,6 +17,12 @@ release.
    ```bash
    npm run verify:migrations
    ```
+4. Run `npm run check:fuel` with the production wallet environment loaded and
+   confirm the house wallet has native Arc gas plus enough Gateway-available
+   USDC for the planned judge runs.
+5. Confirm the Vercel AI Gateway account has paid credits. Free-tier capacity
+   can allow a one-token probe but still rate-limit a multi-step tool loop, and
+   model fallback cannot bypass an account-wide Gateway limit.
 
 ## Database Release Step
 
@@ -69,6 +75,10 @@ Run the smoke check:
 ```bash
 npm run verify:production
 ```
+
+Before a live judging window, complete one capped operator or trusted-agent run
+and open its receipt. Treat a completed receipt with model metadata and payment
+evidence as the AI-path fuel check; a single minimal model response is not enough.
 
 Then inspect recent Vercel warnings:
 

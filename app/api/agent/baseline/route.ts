@@ -1,4 +1,5 @@
 import { runBaseline } from "@/lib/baseline";
+import { spendAfterAgentEvent } from "@/lib/agent-event-spend";
 import { baselineAgentRequest, parseAgentBody } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun, payerKindForActor } from "@/lib/agent-access";
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
           seed,
           buyerKey,
           onEvent: (event) => {
+            spentUsdc = spendAfterAgentEvent(spentUsdc, event);
             events.push(event);
             send({ type: "event", event });
           },

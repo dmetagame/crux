@@ -65,7 +65,7 @@ async function gatewayBalances(privateKey: HexPrivateKey) {
   const balances = await gateway.getBalances();
   return {
     available: trim(formatAtomicUsdc(balances.gateway.available)),
-    total: trim(formatAtomicUsdc(balances.gateway.balance)),
+    total: trim(formatAtomicUsdc(balances.gateway.total)),
   };
 }
 

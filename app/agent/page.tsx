@@ -121,6 +121,12 @@ const PUBLIC_EXAMPLES = ["Nvidia", "Coinbase", "Palantir"];
 const PRIVATE_EXAMPLES = ["OpenAI", "Anthropic", "Stripe"];
 const FEATURED_RECEIPTS = [
   {
+    label: "x402 proof",
+    title: "Fresh verify + settle evidence",
+    href: "/runs/f0834987-c823-4b62-917c-9b7b3ed964cc",
+    meta: "$0.04 spent · 2 accepted settlements",
+  },
+  {
     label: "Public company",
     title: "Coinbase buys SEC filings",
     href: "/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c",
@@ -997,7 +1003,7 @@ function FeaturedReceipts() {
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">/ proof receipts</h2>
         <span className="text-[11px] text-zinc-600">Durable artifacts from live Arc testnet runs</span>
       </div>
-      <div className="grid gap-2 md:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
         {FEATURED_RECEIPTS.map((receipt) => (
           <a
             key={receipt.href}

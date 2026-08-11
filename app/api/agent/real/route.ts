@@ -1,4 +1,5 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import { spendAfterAgentEvent } from "@/lib/agent-event-spend";
 import { parseAgentBody, realAgentRequest } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun, payerKindForActor } from "@/lib/agent-access";
@@ -142,6 +143,7 @@ export async function POST(req: Request) {
           baseUrl,
           buyerKey,
           onEvent: (e) => {
+            spentUsdc = spendAfterAgentEvent(spentUsdc, e);
             events.push(e);
             send({ type: "event", event: e });
           },

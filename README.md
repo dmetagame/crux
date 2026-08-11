@@ -61,6 +61,7 @@ open a single run and inspect what the agent decided and what actually settled.
 
 Golden examples:
 
+- Fresh x402 facilitator proof: https://crux-khaki.vercel.app/runs/f0834987-c823-4b62-917c-9b7b3ed964cc
 - Coinbase public-company run: https://crux-khaki.vercel.app/runs/6707c268-9a4e-4f9c-b197-e9e8f3ca410c
 - OpenAI private-company run: https://crux-khaki.vercel.app/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c
 - Northwind scored benchmark: https://crux-khaki.vercel.app/runs/9859fecb-488b-478d-a5bc-fec3899d9229

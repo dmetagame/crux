@@ -8,6 +8,7 @@ import { SOURCES } from "@/lib/marketplace";
 import { loadReceiptPaymentEvidence, type PaymentEvidence } from "@/lib/payment-evidence";
 import { REAL_SOURCES } from "@/lib/real-sources";
 import { getRunReceiptWithStaleTimeout } from "@/lib/run-receipts";
+import { settlementReferencesFromPayload } from "@/lib/receipt-settlements";
 import { settlementExplorerUrl, settlementLabel, settlementStatusLabel } from "@/lib/settlement";
 
 type ReceiptPageProps = {
@@ -89,6 +90,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const claims = asArray(result?.claims) as SourcedClaim[];
   const modelsUsed = asArray(result?.modelsUsed).filter((value): value is string => typeof value === "string");
   const displayedModel = modelsUsed.at(-1) ?? receipt.model;
+  const expectedPaymentReferences = settlementReferencesFromPayload(payload).length;
   const previews = new Set(events.filter((e) => e.kind === "preview").map((e) => e.sourceId));
   const bought = new Map(ledger.map((entry) => [entry.sourceId, entry]));
   const catalog = receipt.mode === "real" ? REAL_SOURCES : SOURCES;
@@ -240,7 +242,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
         <PaymentEvidenceSection
           evidence={paymentEvidence}
-          expectedReferences={ledger.filter((entry) => entry.tx).length}
+          expectedReferences={expectedPaymentReferences}
         />
 
         <section className="mt-5 grid gap-4 md:grid-cols-3">

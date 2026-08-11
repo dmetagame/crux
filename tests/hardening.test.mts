@@ -4,6 +4,7 @@ import {
   agentFallbackModels,
   modelsUsedFromSteps,
 } from "../lib/agent-models.ts";
+import { spendAfterAgentEvent } from "../lib/agent-event-spend.ts";
 import { gitShaMatches } from "../lib/deployment-version.ts";
 import { sanitizePaymentEvidenceRow } from "../lib/payment-evidence.ts";
 import { classifyPaymentActor } from "../lib/payer-attribution.ts";
@@ -61,6 +62,23 @@ test("receipt settlement references are found through nested comparison payloads
     }).sort(),
     ["gateway-ref-1", "gateway-ref-2"],
   );
+});
+
+test("partial-run spend is retained from settled purchase events", () => {
+  let spent = spendAfterAgentEvent(0, { kind: "preview", sourceId: "financials" });
+  spent = spendAfterAgentEvent(spent, {
+    kind: "purchase",
+    n: 1,
+    sourceId: "premium-analysis",
+    price: "$0.03",
+    listedPrice: "$0.03",
+    amountAtomic: "30000",
+    delivered: true,
+    rationale: "company-specific evidence",
+    tx: "gateway-ref",
+  });
+
+  assert.equal(spent, 0.03);
 });
 
 test("public payment evidence exposes only sanitized proof fields", () => {

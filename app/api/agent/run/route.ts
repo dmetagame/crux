@@ -1,4 +1,5 @@
 import { runResearchAgent } from "@/lib/agent";
+import { spendAfterAgentEvent } from "@/lib/agent-event-spend";
 import { benchmarkAgentRequest, parseAgentBody } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
 import { guardAgentRun, payerKindForActor } from "@/lib/agent-access";
@@ -119,6 +120,7 @@ export async function POST(req: Request) {
           seed,
           buyerKey,
           onEvent: (e) => {
+            spentUsdc = spendAfterAgentEvent(spentUsdc, e);
             events.push(e);
             send({ type: "event", event: e });
           },

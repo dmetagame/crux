@@ -14,6 +14,9 @@ const baseUrl = normalizeBaseUrl(
     DEFAULT_BASE_URL,
 );
 const expectedGitSha = process.env.CRUX_EXPECTED_GIT_SHA?.trim() || null;
+const goldenProofReceiptId =
+  process.env.CRUX_GOLDEN_PROOF_RECEIPT_ID?.trim() ||
+  "f0834987-c823-4b62-917c-9b7b3ed964cc";
 
 const checks: Check[] = [
   {
@@ -38,6 +41,38 @@ const checks: Check[] = [
       const json = parseJson(body);
       if (!Array.isArray(json.sources) || json.sources.length === 0) {
         throw new Error("expected non-empty sources array");
+      }
+    },
+  },
+  {
+    name: "agent discovery manifest",
+    path: "/.well-known/crux-agent.json",
+    expect: (res, body) => {
+      expectStatus(res, 200);
+      const json = parseJson(body);
+      if (json.x402?.network !== "arcTestnet") {
+        throw new Error("expected Arc testnet x402 discovery metadata");
+      }
+      if (typeof json.openapi !== "string" || !json.openapi.endsWith("/openapi.json")) {
+        throw new Error("expected OpenAPI discovery URL");
+      }
+    },
+  },
+  {
+    name: "golden facilitator-proof receipt",
+    path: `/api/runs/${goldenProofReceiptId}`,
+    expect: (res, body) => {
+      expectStatus(res, 200);
+      const json = parseJson(body);
+      const evidence = Array.isArray(json.paymentEvidence) ? json.paymentEvidence : [];
+      if (json.status !== "completed" || evidence.length < 2) {
+        throw new Error("expected a completed receipt with at least two payment proofs");
+      }
+      if (evidence.some((item: any) => item.facilitatorVerify?.isValid !== true)) {
+        throw new Error("golden receipt contains an unverified payment");
+      }
+      if (evidence.some((item: any) => item.facilitatorSettle?.success !== true)) {
+        throw new Error("golden receipt contains an unsettled payment");
       }
     },
   },
