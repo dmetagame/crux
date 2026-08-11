@@ -30,6 +30,8 @@ interface LedgerEntry {
 interface RunResult {
   label: string;
   model: string;
+  requestedModel?: string;
+  modelsUsed?: string[];
   brief: string;
   factsClaimed: string[];
   claims?: { text: string; sourceIds: string[]; evidence: string }[];
@@ -95,8 +97,13 @@ interface WalletInfo {
 }
 interface WalletStatus {
   funded: boolean;
+  hasUsdc: boolean;
   walletUsdc: number;
   gatewayUsdc: number;
+  gasReady: boolean | null;
+  gasCheckAvailable: boolean;
+  nativeGasBalance: string | null;
+  requiresDeposit: boolean;
 }
 interface AdminSession {
   configured: boolean;
@@ -317,7 +324,16 @@ function AgentPageContent() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not check funding");
-      setWalletStatus({ funded: d.funded, walletUsdc: d.walletUsdc, gatewayUsdc: d.gatewayUsdc });
+      setWalletStatus({
+        funded: d.funded,
+        hasUsdc: d.hasUsdc,
+        walletUsdc: d.walletUsdc,
+        gatewayUsdc: d.gatewayUsdc,
+        gasReady: d.gasReady,
+        gasCheckAvailable: d.gasCheckAvailable,
+        nativeGasBalance: d.nativeGasBalance,
+        requiresDeposit: d.requiresDeposit,
+      });
     } catch (e) {
       setWalletErr((e as Error).message);
     } finally {
@@ -897,7 +913,7 @@ function VerifyCruxPanel() {
     },
     {
       label: "Track settlement",
-      text: "Open a receipt for Gateway refs; ArcScan links appear when Gateway exposes an Arc transaction hash.",
+      text: "Open a receipt for sanitized facilitator verify/settle fields; ArcScan appears only for a real Arc hash.",
       href: FEATURED_RECEIPTS[0].href,
     },
     {
@@ -1036,7 +1052,13 @@ function RoleWorkspacePanel({
   const operatorSelected = role === "operator";
   const walletReady = !!(wallet?.walletToken && walletStatus?.funded);
   const operatorReady = !!adminSession?.authenticated;
-  const visitorBadge = walletReady ? "funded" : wallet ? "faucet needed" : "self-funded";
+  const visitorBadge = walletReady
+    ? "run ready"
+    : walletStatus?.hasUsdc && walletStatus.gasReady === false
+      ? "gas needed"
+      : wallet
+        ? "faucet needed"
+        : "self-funded";
   const cardBase = "rounded-lg border bg-zinc-900/45 backdrop-blur-sm transition";
 
   return (
@@ -1127,11 +1149,17 @@ function RoleWorkspacePanel({
                   {walletStatus ? (
                     <span className={`text-xs ${walletStatus.funded ? "text-emerald-400" : "text-amber-400"}`}>
                       {walletStatus.funded
-                        ? `${(walletStatus.walletUsdc + walletStatus.gatewayUsdc).toFixed(2)} USDC ready`
-                        : "not funded yet"}
+                        ? `${(walletStatus.walletUsdc + walletStatus.gatewayUsdc).toFixed(2)} USDC ready${walletStatus.requiresDeposit ? " · Arc gas detected" : " · Gateway funded"}`
+                        : walletStatus.hasUsdc && walletStatus.gasReady === false
+                          ? "USDC found · native Arc gas missing"
+                          : walletStatus.hasUsdc && walletStatus.gasReady === null
+                            ? "USDC found · Arc gas check unavailable"
+                            : walletStatus.gasReady
+                              ? "Arc gas found · faucet USDC missing"
+                              : "not funded yet"}
                     </span>
                   ) : (
-                    <span className="text-xs text-zinc-500">Fund once, then check before running.</span>
+                    <span className="text-xs text-zinc-500">The Circle faucet must send both test USDC and Arc native gas.</span>
                   )}
                 </div>
               </div>

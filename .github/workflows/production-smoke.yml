@@ -20,7 +20,7 @@ jobs:
   smoke:
     name: Verify Production
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
 
     env:
       DEFAULT_BASE_URL: https://crux-khaki.vercel.app
@@ -35,11 +35,15 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Allow Vercel promotion to settle
+      - name: Wait for exact production commit
         if: github.event_name == 'push'
-        run: sleep 90
+        env:
+          CRUX_VERIFY_BASE_URL: ${{ env.INPUT_BASE_URL || env.DEFAULT_BASE_URL }}
+          CRUX_EXPECTED_GIT_SHA: ${{ github.sha }}
+        run: npm run wait:production
 
       - name: Run production smoke checks
         env:
           CRUX_VERIFY_BASE_URL: ${{ env.INPUT_BASE_URL || env.DEFAULT_BASE_URL }}
+          CRUX_EXPECTED_GIT_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
         run: npm run verify:production

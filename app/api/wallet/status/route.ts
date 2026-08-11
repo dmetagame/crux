@@ -1,17 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { createPublicClient, formatUnits, http } from "viem";
 import { getWalletKey } from "@/lib/wallet";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
+import { visitorWalletReadiness } from "@/lib/wallet-readiness";
 
 export const maxDuration = 20;
 
+const arcClient = createPublicClient({
+  transport: http(
+    process.env.ARC_TESTNET_RPC_URL ??
+      process.env.NEXT_PUBLIC_ARC_RPC_URL ??
+      "https://rpc.testnet.arc.network",
+  ),
+});
+
 /**
  * Funding status for a user wallet. GET ?walletId=…
- * Returns { address, walletUsdc, gatewayUsdc, funded } so the UI can tell the
+ * Returns wallet, Gateway, and native-gas readiness so the UI can tell the
  * visitor whether their faucet drop has landed before they start a run.
  *
- * `funded` is true once there is USDC to work with — either still in the wallet
- * (ready to deposit on the first run) or already deposited into the Gateway.
+ * `funded` remains the backwards-compatible run-ready flag.
  */
 export async function GET(req: NextRequest) {
   const walletId = new URL(req.url).searchParams.get("walletId")?.trim();
@@ -47,16 +56,29 @@ export async function GET(req: NextRequest) {
     }
 
     const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: rec.key });
-    const bal = await gateway.getBalances();
+    const [bal, nativeGasResult] = await Promise.all([
+      gateway.getBalances(),
+      arcClient.getBalance({ address: rec.address as `0x${string}` })
+        .then((value) => ({ ok: true as const, value }))
+        .catch((error) => ({ ok: false as const, error })),
+    ]);
     const walletUsdc = Number(bal.wallet.balance) / 1e6;
     const gatewayUsdc = Number(bal.gateway.available) / 1e6;
+    const nativeGasAtomic = nativeGasResult.ok ? nativeGasResult.value : null;
+    const readiness = visitorWalletReadiness({ walletUsdc, gatewayUsdc, nativeGasAtomic });
+    if (!nativeGasResult.ok) {
+      console.warn("[wallet] Arc native gas check failed:", (nativeGasResult.error as Error).message);
+    }
 
     return NextResponse.json(
       {
         address: rec.address,
         walletUsdc,
         gatewayUsdc,
-        funded: walletUsdc > 0 || gatewayUsdc > 0,
+        nativeGasAtomic: nativeGasAtomic?.toString() ?? null,
+        nativeGasBalance: nativeGasAtomic === null ? null : formatUnits(nativeGasAtomic, 18),
+        gasCheckAvailable: nativeGasAtomic !== null,
+        ...readiness,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

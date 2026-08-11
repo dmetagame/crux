@@ -1,3 +1,5 @@
+import { gitShaMatches } from "../lib/deployment-version.ts";
+
 type Check = {
   name: string;
   path: string;
@@ -23,7 +25,7 @@ const checks: Check[] = [
       if (typeof json.gitSha !== "string" || json.gitSha.length < 7) {
         throw new Error("deployment did not expose a git SHA");
       }
-      if (expectedGitSha && !json.gitSha.startsWith(expectedGitSha) && !expectedGitSha.startsWith(json.gitSha)) {
+      if (expectedGitSha && !gitShaMatches(json.gitSha, expectedGitSha)) {
         throw new Error(`expected deployment SHA ${expectedGitSha}, got ${json.gitSha}`);
       }
     },

@@ -130,7 +130,7 @@ export async function POST(req: Request) {
           receiptId = await completeRunReceipt(run.id, {
             mode: "benchmark",
             subject: topic,
-            model,
+            model: result.model,
             budgetUsdc: budget,
             spentUsdc: result.spent,
             payerKind,

@@ -14,10 +14,37 @@ export function getSellerAddress(): HexAddress {
 }
 
 export function getHouseAddress(): HexAddress {
-  return requiredAddress("house testnet address", [
+  const configured = optionalAddress("house testnet address", [
     "CRUX_HOUSE_TESTNET_ADDRESS",
     "BUYER_ADDRESS",
   ]);
+  if (configured) return configured;
+
+  assertTestnetKeyScope();
+  const found = firstEnv([
+    "CRUX_HOUSE_TESTNET_PRIVATE_KEY",
+    "BUYER_PRIVATE_KEY",
+  ]);
+  if (!found) {
+    throw new Error(
+      "Missing house testnet address. Set CRUX_HOUSE_TESTNET_ADDRESS or a matching CRUX_HOUSE_TESTNET_PRIVATE_KEY.",
+    );
+  }
+  return addressFromPrivateKey(normalizePrivateKey("house testnet private key", found.name, found.value));
+}
+
+export function getHistoricalHouseAddresses(): HexAddress[] {
+  return configuredAddressList(
+    "historical house testnet address",
+    "CRUX_HISTORICAL_HOUSE_ADDRESSES",
+  );
+}
+
+export function getKnownExternalX402Addresses(): HexAddress[] {
+  return configuredAddressList(
+    "known external x402 payer address",
+    "CRUX_EXTERNAL_X402_PAYER_ADDRESSES",
+  );
 }
 
 export function requireSellerPrivateKey(): HexPrivateKey {
@@ -108,6 +135,15 @@ function normalizePrivateKey(label: string, name: string, value: string): HexPri
     throw new Error(`${name} is not a valid ${label}.`);
   }
   return trimmed as HexPrivateKey;
+}
+
+function configuredAddressList(label: string, name: string): HexAddress[] {
+  const values = process.env[name]?.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean) ?? [];
+  const addresses = values.map((value) => {
+    if (!isAddress(value)) throw new Error(`${name} contains an invalid ${label}.`);
+    return getAddress(value) as HexAddress;
+  });
+  return [...new Map(addresses.map((address) => [address.toLowerCase(), address])).values()];
 }
 
 function firstEnv(names: [string, ...string[]]) {

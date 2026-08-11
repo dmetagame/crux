@@ -96,9 +96,9 @@ scoped Crux agent key.
   Supabase (payment ledger)        lib/score.ts (objective brief scorer)
 ```
 
-- **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop. Model is routed through
-  the **Vercel AI Gateway** — develop on `claude-haiku-4.5`, swap one string to
-  `claude-opus-4.8` for the demo.
+- **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop routed through the
+  **Vercel AI Gateway**. Haiku 4.5 is the proven primary, with Gemini 2.5 Flash
+  Lite and GPT OSS 20B as in-loop fallbacks. Receipts record the actual model IDs used.
 - **Marketplace** (`lib/marketplace.ts`): the decision space — 9 sources with
   varied price/quality/reliability, free previews, the trap, and a misleading
   rumor. Reliability is deterministic under a seed, so runs are reproducible.
@@ -114,8 +114,9 @@ scoped Crux agent key.
 
 - Network: **Arc testnet** (`eip155:5042002`), RPC `https://rpc.testnet.arc.network`
 - USDC: `0x3600000000000000000000000000000000000000`; Circle Gateway batching
-- Payments are gas-free for the agent (authorizations are batched into one
-  on-chain settlement); explorer: `https://testnet.arcscan.app`
+- x402 payment authorizations are gas-free for the agent and batched into one
+  on-chain settlement. A fresh visitor wallet needs native Arc gas once to deposit
+  faucet USDC into Gateway; the readiness check verifies both before enabling a run.
 - Receipts record Circle Gateway settlement references for each paid source.
   Crux links ArcScan only when Gateway exposes a real Arc EVM transaction hash;
   otherwise the durable proof is the Gateway ref stored in the receipt/payment ledger.
@@ -248,7 +249,7 @@ npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
-Useful env overrides: `MODEL` (e.g. `anthropic/claude-opus-4.8`), `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
+Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`, `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
 
 For production deploys, use [RELEASE.md](./RELEASE.md) so Vercel deploys,
 Supabase migrations, smoke checks, and short-lived secrets are tracked together.

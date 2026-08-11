@@ -152,7 +152,7 @@ export async function POST(req: Request) {
           receiptId = await completeRunReceipt(run.id, {
             mode: "real",
             subject,
-            model,
+            model: result.model,
             budgetUsdc: budget,
             spentUsdc: result.spent,
             payerKind,

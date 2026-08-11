@@ -84,35 +84,84 @@ export interface RealSourceResult {
 // SEC's fair-access policy requires a descriptive User-Agent with a contact; a
 // bare UA gets 403'd from datacenter IPs. Used for every outbound data call.
 const UA = "Crux-Research/1.0 (dmetagame@users.noreply.github.com)";
+const DEFAULT_SOURCE_CALL_TIMEOUT_MS = 15_000;
+const MAX_FETCH_ATTEMPT_MS = 7_000;
 
-async function fetchOnce(url: string, init: RequestInit | undefined, ms: number): Promise<any> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  try {
-    const res = await fetch(url, {
-      ...init,
-      signal: ctrl.signal,
-      headers: { "User-Agent": UA, Accept: "application/json", ...(init?.headers ?? {}) },
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
+type SourceFetchContext = {
+  deadlineAt: number;
+  signal: AbortSignal;
+};
+
+async function fetchOnce(url: string, context: SourceFetchContext, init?: RequestInit): Promise<any> {
+  const remaining = remainingSourceTime(context);
+  const attemptSignal = AbortSignal.timeout(Math.min(MAX_FETCH_ATTEMPT_MS, remaining));
+  const signals = [context.signal, attemptSignal];
+  if (init?.signal) signals.push(init.signal);
+  const res = await fetch(url, {
+    ...init,
+    signal: AbortSignal.any(signals),
+    headers: { "User-Agent": UA, Accept: "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return await res.json();
 }
 
 /** One retry with short backoff — public APIs occasionally throttle a single hit. */
-async function fetchJson(url: string, init?: RequestInit, ms = 12000): Promise<any> {
+async function fetchJson(url: string, context: SourceFetchContext, init?: RequestInit): Promise<any> {
   try {
-    return await fetchOnce(url, init, ms);
-  } catch {
-    await new Promise((r) => setTimeout(r, 600));
-    return fetchOnce(url, init, ms);
+    return await fetchOnce(url, context, init);
+  } catch (err) {
+    if (context.signal.aborted || remainingSourceTime(context, false) < 1_000) {
+      throw sourceFetchError(err, context);
+    }
+    await waitForRetry(context);
+    try {
+      return await fetchOnce(url, context, init);
+    } catch (retryErr) {
+      throw sourceFetchError(retryErr, context);
+    }
   }
 }
 
+function sourceCallTimeoutMs() {
+  const configured = Number.parseInt(process.env.CRUX_REAL_SOURCE_TIMEOUT_MS ?? "", 10);
+  if (!Number.isFinite(configured)) return DEFAULT_SOURCE_CALL_TIMEOUT_MS;
+  return Math.min(25_000, Math.max(3_000, configured));
+}
+
+function remainingSourceTime(context: SourceFetchContext, throwIfExpired = true) {
+  const remaining = context.deadlineAt - Date.now();
+  if (remaining > 0) return remaining;
+  if (!throwIfExpired) return 0;
+  throw new Error("source call deadline exceeded");
+}
+
+async function waitForRetry(context: SourceFetchContext) {
+  const delay = Math.min(600, Math.max(0, remainingSourceTime(context) - 250));
+  if (delay <= 0) throw new Error("source call deadline exceeded");
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      context.signal.removeEventListener("abort", onAbort);
+      reject(new Error("source call deadline exceeded"));
+    };
+    const timer = setTimeout(() => {
+      context.signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    context.signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function sourceFetchError(err: unknown, context: SourceFetchContext) {
+  if (context.signal.aborted || Date.now() >= context.deadlineAt) {
+    return new Error("source call deadline exceeded");
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 // --- Wikipedia ------------------------------------------------------------
-async function fetchWikipedia(subject: string): Promise<RealSourceResult> {
+async function fetchWikipedia(subject: string, context: SourceFetchContext): Promise<RealSourceResult> {
   const base = { sourceId: "wikipedia", name: "Wikipedia Overview", subject } as const;
   try {
     // Resolve the canonical article title first, so "Stripe" → "Stripe, Inc." and
@@ -123,6 +172,7 @@ async function fetchWikipedia(subject: string): Promise<RealSourceResult> {
         `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
           subject,
         )}&srlimit=1&format=json`,
+        context,
       );
       if (s?.query?.search?.[0]?.title) title = s.query.search[0].title;
     } catch {
@@ -130,6 +180,7 @@ async function fetchWikipedia(subject: string): Promise<RealSourceResult> {
     }
     const data = await fetchJson(
       `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/\s+/g, "_"))}`,
+      context,
     );
     if (data?.type === "disambiguation" || !data?.extract) {
       return { ...base, delivered: false, content: `No clean Wikipedia article for "${subject}".`, citationUrl: null };
@@ -143,7 +194,7 @@ async function fetchWikipedia(subject: string): Promise<RealSourceResult> {
       citationUrl: url,
     };
   } catch (err) {
-    return { ...base, delivered: false, content: `Wikipedia lookup failed: ${(err as Error).message}`, citationUrl: null };
+    return { ...base, delivered: false, content: `Wikipedia lookup failed: ${sourceFetchError(err, context).message}`, citationUrl: null };
   }
 }
 
@@ -155,19 +206,21 @@ const WD_PROPS: Record<string, string> = {
   P1128: "employees",
 };
 
-async function fetchWikidata(subject: string): Promise<RealSourceResult> {
+async function fetchWikidata(subject: string, context: SourceFetchContext): Promise<RealSourceResult> {
   const base = { sourceId: "wikidata", name: "Wikidata Structured Facts", subject } as const;
   try {
     const search = await fetchJson(
       `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(
         subject,
       )}&language=en&format=json&limit=1`,
+      context,
     );
     const hit = search?.search?.[0];
     if (!hit) return { ...base, delivered: false, content: `No Wikidata entity for "${subject}".`, citationUrl: null };
 
     const ent = await fetchJson(
       `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${hit.id}&props=claims|descriptions|sitelinks&format=json`,
+      context,
     );
     const e = ent?.entities?.[hit.id];
     const claims = e?.claims ?? {};
@@ -192,7 +245,7 @@ async function fetchWikidata(subject: string): Promise<RealSourceResult> {
       citationUrl: hit.concepturi ?? `https://www.wikidata.org/wiki/${hit.id}`,
     };
   } catch (err) {
-    return { ...base, delivered: false, content: `Wikidata lookup failed: ${(err as Error).message}`, citationUrl: null };
+    return { ...base, delivered: false, content: `Wikidata lookup failed: ${sourceFetchError(err, context).message}`, citationUrl: null };
   }
 }
 
@@ -216,7 +269,7 @@ function loadTickers() {
   return TICKER_MAP;
 }
 
-async function fetchEdgar(subject: string): Promise<RealSourceResult> {
+async function fetchEdgar(subject: string, context: SourceFetchContext): Promise<RealSourceResult> {
   const base = { sourceId: "edgar", name: "SEC EDGAR Filings", subject } as const;
   try {
     const q = subject.trim().toLowerCase();
@@ -241,7 +294,7 @@ async function fetchEdgar(subject: string): Promise<RealSourceResult> {
     let sic = "";
     let filings = "";
     try {
-      const sub = await fetchJson(`https://data.sec.gov/submissions/CIK${match.cik}.json`);
+      const sub = await fetchJson(`https://data.sec.gov/submissions/CIK${match.cik}.json`, context);
       if (sub?.name) name = sub.name;
       if (sub?.sicDescription) sic = ` SIC: ${sub.sicDescription}.`;
       const recent = sub?.filings?.recent;
@@ -263,16 +316,17 @@ async function fetchEdgar(subject: string): Promise<RealSourceResult> {
       citationUrl: `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${match.cik}&type=10-K`,
     };
   } catch (err) {
-    return { ...base, delivered: false, content: `EDGAR lookup failed: ${(err as Error).message}`, citationUrl: null };
+    return { ...base, delivered: false, content: `EDGAR lookup failed: ${sourceFetchError(err, context).message}`, citationUrl: null };
   }
 }
 
 // --- Hacker News ----------------------------------------------------------
-async function fetchNews(subject: string): Promise<RealSourceResult> {
+async function fetchNews(subject: string, context: SourceFetchContext): Promise<RealSourceResult> {
   const base = { sourceId: "news", name: "Hacker News Discussion", subject } as const;
   try {
     const data = await fetchJson(
       `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(subject)}&tags=story&hitsPerPage=5`,
+      context,
     );
     const hits = (data?.hits ?? []).filter((h: any) => h.title);
     if (!hits.length) return { ...base, delivered: false, content: `No Hacker News discussion mentions "${subject}".`, citationUrl: null };
@@ -286,11 +340,11 @@ async function fetchNews(subject: string): Promise<RealSourceResult> {
       citationUrl: `https://hn.algolia.com/?q=${encodeURIComponent(subject)}`,
     };
   } catch (err) {
-    return { ...base, delivered: false, content: `Hacker News lookup failed: ${(err as Error).message}`, citationUrl: null };
+    return { ...base, delivered: false, content: `Hacker News lookup failed: ${sourceFetchError(err, context).message}`, citationUrl: null };
   }
 }
 
-const FETCHERS: Record<string, (s: string) => Promise<RealSourceResult>> = {
+const FETCHERS: Record<string, (s: string, context: SourceFetchContext) => Promise<RealSourceResult>> = {
   wikipedia: fetchWikipedia,
   wikidata: fetchWikidata,
   edgar: fetchEdgar,
@@ -301,7 +355,17 @@ const FETCHERS: Record<string, (s: string) => Promise<RealSourceResult>> = {
 export async function fetchRealSource(id: string, subject: string): Promise<RealSourceResult> {
   const fetcher = FETCHERS[id];
   if (!fetcher) throw new Error(`Unknown real source: ${id}`);
-  return fetcher(subject);
+  const controller = new AbortController();
+  const timeoutMs = sourceCallTimeoutMs();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetcher(subject, {
+      deadlineAt: Date.now() + timeoutMs,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Public catalog view — metadata only, no live calls. */

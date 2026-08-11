@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
+import { loadReceiptPaymentEvidence, type PaymentEvidence } from "@/lib/payment-evidence";
 import { getRunReceiptWithStaleTimeout, runStaleTimeoutSeconds, type RunReceipt } from "@/lib/run-receipts";
 
 export const maxDuration = 15;
@@ -26,12 +27,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  return NextResponse.json(toRunStatus(receipt, req.url), {
+  const paymentEvidence = await loadReceiptPaymentEvidence(receipt.payload);
+  return NextResponse.json(toRunStatus(receipt, req.url, paymentEvidence), {
     headers: { "Cache-Control": "no-store" },
   });
 }
 
-function toRunStatus(receipt: RunReceipt, requestUrl: string) {
+function toRunStatus(receipt: RunReceipt, requestUrl: string, paymentEvidence: PaymentEvidence[]) {
   const payload = receipt.payload ?? {};
   const isComparison = payload.kind === "comparison";
   const agentDone = isComparison
@@ -67,6 +69,7 @@ function toRunStatus(receipt: RunReceipt, requestUrl: string) {
     result,
     score,
     events,
+    paymentEvidence,
     comparison: isComparison ? recordValue(payload.results) : null,
   };
 }

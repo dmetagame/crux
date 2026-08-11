@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getHouseAddress } from "@/lib/wallet-keys";
+import { classifyPaymentActor, normalizePayer } from "@/lib/payer-attribution";
+import { settlementReferencesFromPayload } from "@/lib/receipt-settlements";
+import {
+  getHistoricalHouseAddresses,
+  getHouseAddress,
+  getKnownExternalX402Addresses,
+} from "@/lib/wallet-keys";
 import { ARC_TESTNET_CHAIN_ID, classifySettlementReference } from "@/lib/settlement";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 
@@ -53,14 +59,19 @@ export async function GET(req: NextRequest) {
         .map((row) => row.address?.trim().toLowerCase())
         .filter((address): address is string => Boolean(address)),
     );
-    const houseAddress = safeHouseAddress();
-    const paymentTotals = aggregatePayments(payments, walletAddresses, houseAddress);
-    const runs = aggregateRuns((runRows.data ?? []) as RunRow[]);
+    const runData = (runRows.data ?? []) as RunRow[];
+    const receiptKinds = receiptPayerKinds(runData);
+    const houseAddresses = safeHouseAddresses();
+    const visitorAddresses = new Set(walletAddresses);
+    inferReceiptPayerAddresses(payments, receiptKinds, houseAddresses, visitorAddresses);
+    const externalAddresses = safeExternalAddresses();
+    const attribution = { houseAddresses, visitorAddresses, externalAddresses, receiptKinds };
+    const paymentTotals = aggregatePayments(payments, attribution);
+    const runs = aggregateRuns(runData);
     const recent = payments.slice(0, 8).map(normalizeRecentPayment);
     const last24h = aggregatePayments(
       payments.filter((row) => Date.now() - Date.parse(row.created_at) <= WINDOW_SECONDS * 1000),
-      walletAddresses,
-      houseAddress,
+      attribution,
     );
     const paidVisitorWallets = new Set(
       [...payerSet].filter((payer) => walletAddresses.has(payer)),
@@ -68,7 +79,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       {
-        statsVersion: "2026-08-10",
+        statsVersion: "2026-08-11",
         totalPayments: paymentTotals.payments,
         totalAtomicUsdc: paymentTotals.atomic.toString(),
         totalUsdc: atomicToNumber(paymentTotals.atomic),
@@ -76,6 +87,9 @@ export async function GET(req: NextRequest) {
         distinctPayers: payerSet.size,
         onboardedWallets: paidVisitorWallets.size,
         actorCategories: paymentTotals.actorCategories,
+        payerAttributionCoverage: paymentTotals.payments
+          ? (paymentTotals.payments - paymentTotals.actorCategories.unattributed) / paymentTotals.payments
+          : 0,
         completedTasks: runs.completed,
         costPerCompletedTaskUsdc: runs.completed ? atomicToNumber(runs.spent) / runs.completed : 0,
         budgetUtilization: runs.budget > BigInt(0) ? Number(runs.spent * BigInt(10000) / runs.budget) / 10000 : 0,
@@ -138,15 +152,27 @@ async function loadAllPayments(supabase: SupabaseClient, select: string) {
   }
 }
 
-function aggregatePayments(rows: PaymentRow[], wallets: Set<string>, houseAddress: string | null) {
+type PaymentAttribution = {
+  houseAddresses: Set<string>;
+  visitorAddresses: Set<string>;
+  externalAddresses: Set<string>;
+  receiptKinds: Map<string, string>;
+};
+
+function aggregatePayments(rows: PaymentRow[], attribution: PaymentAttribution) {
   let atomic = BigInt(0);
-  const actorCategories = { house: 0, visitor: 0, externalX402: 0 };
+  const actorCategories = { house: 0, visitor: 0, externalX402: 0, unattributed: 0 };
   for (const row of rows) {
     atomic += rowAmountAtomic(row);
-    const payer = row.payer?.trim().toLowerCase();
-    if (payer && houseAddress && payer === houseAddress) actorCategories.house += 1;
-    else if (payer && wallets.has(payer)) actorCategories.visitor += 1;
-    else actorCategories.externalX402 += 1;
+    const reference = paymentReference(row);
+    const category = classifyPaymentActor({
+      payer: row.payer,
+      receiptPayerKind: reference ? attribution.receiptKinds.get(reference) : null,
+      houseAddresses: attribution.houseAddresses,
+      visitorAddresses: attribution.visitorAddresses,
+      externalAddresses: attribution.externalAddresses,
+    });
+    actorCategories[category] += 1;
   }
   return { payments: rows.length, atomic, actorCategories };
 }
@@ -194,12 +220,66 @@ function atomicToNumber(value: bigint) {
   return Number(value) / Number(MICRO_USDC);
 }
 
-function safeHouseAddress() {
+function safeHouseAddresses() {
+  const addresses = new Set<string>();
   try {
-    return getHouseAddress().toLowerCase();
-  } catch {
-    return null;
+    addresses.add(getHouseAddress().toLowerCase());
+  } catch (err) {
+    console.warn("[stats] Current house address unavailable:", (err as Error).message);
   }
+  try {
+    for (const address of getHistoricalHouseAddresses()) addresses.add(address.toLowerCase());
+  } catch (err) {
+    console.warn("[stats] Invalid historical house address configuration:", (err as Error).message);
+  }
+  return addresses;
+}
+
+function safeExternalAddresses() {
+  try {
+    return new Set(getKnownExternalX402Addresses().map((address) => address.toLowerCase()));
+  } catch (err) {
+    console.warn("[stats] Invalid external payer configuration:", (err as Error).message);
+    return new Set<string>();
+  }
+}
+
+function receiptPayerKinds(rows: RunRow[]) {
+  const kinds = new Map<string, string>();
+  const conflicts = new Set<string>();
+  for (const row of rows) {
+    const kind = String(row.payer_kind ?? "house-wallet");
+    for (const reference of settlementReferencesFromPayload(row.payload)) {
+      const existing = kinds.get(reference);
+      if (existing && existing !== kind) {
+        conflicts.add(reference);
+      } else {
+        kinds.set(reference, kind);
+      }
+    }
+  }
+  for (const reference of conflicts) kinds.delete(reference);
+  return kinds;
+}
+
+function inferReceiptPayerAddresses(
+  payments: PaymentRow[],
+  receiptKinds: Map<string, string>,
+  houseAddresses: Set<string>,
+  visitorAddresses: Set<string>,
+) {
+  for (const row of payments) {
+    const reference = paymentReference(row);
+    const payer = normalizePayer(row.payer);
+    if (!reference || !payer) continue;
+    const kind = receiptKinds.get(reference);
+    if (kind === "visitor-wallet") visitorAddresses.add(payer);
+    else if (kind === "house-wallet" || kind === "trusted-agent") houseAddresses.add(payer);
+  }
+}
+
+function paymentReference(row: PaymentRow) {
+  return row.settlement_reference?.trim() || row.gateway_tx?.trim() || row.arc_tx_hash?.trim() || null;
 }
 
 function normalizeRecentPayment(row: PaymentRow) {

@@ -82,7 +82,7 @@ post-hackathon API posture credible.
   layer: it decides, pays, cites, and stops while budget remains.
 
 ## Tech
-Next.js 16 (Turbopack) · Vercel AI SDK v6 agent loop (Haiku 4.5 via Vercel AI Gateway) ·
+Next.js 16 (Turbopack) · Vercel AI SDK v6 agent loop (Haiku 4.5 primary with Gateway model fallback) ·
 `@circle-fin/x402-batching` GatewayClient on Arc testnet (`eip155:5042002`) ·
 x402-gated seller routes (`/api/real/*`, `/api/research/*`) · Supabase `payment_events` for the live
 counter · bundled SEC CIK/ticker map (SEC rate-limits datacenter IPs, so the public/private signal is
@@ -91,17 +91,16 @@ deterministic and zero-latency; filings enrichment is best-effort live).
 ## Honest notes
 - The demo LLM is Haiku 4.5 — a deliberate budget decision, applied to our own stack: it hits the
   benchmark ceiling (11/11, trap avoided, rumor refused) at a fraction of frontier-model cost, which is
-  exactly the cost/value judgment Crux exists to make. The agent loop is model-agnostic and runs
-  Opus 4.8 unchanged with paid credits.
+  exactly the cost/value judgment Crux exists to make. If Haiku is unavailable, Gateway can fail over
+  inside the same tool loop without replaying purchases; the receipt records which models actually ran.
 - Real-subject mode depends on live public APIs; obscure subjects may return less. Curated example chips
   are unambiguous public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,
   the scorer, the real-data layer, the agents, and the UI are ours.
 
 ## What's next (post-submission roadmap)
-- **Multi-model second opinions:** the agent loop is model-agnostic, so a second model can critique the
-  source plan before any spend — the final decision stays budget-bound and receipt-backed with the
-  primary agent. The same marketplace + ground-truth scorer also works as a benchmark for *which model
-  spends money better*.
+- **Multi-model second opinions:** runtime failover is already implemented. A separate optional critic can
+  later review the source plan before any spend while the primary agent remains budget-bound and
+  receipt-backed. The marketplace + ground-truth scorer can benchmark *which model spends money better*.
 - Scoped agent keys for external teams already work today (`AGENT_INTEGRATION.md`); the roadmap is
   turning those into self-serve onboarding with per-key budgets.

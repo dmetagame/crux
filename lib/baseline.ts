@@ -90,6 +90,8 @@ export async function runBaseline(opts: BaselineOpts): Promise<RunResult> {
           ? "buy-by-quality"
           : "preview-aware-heuristic",
     model: "none (heuristic)",
+    requestedModel: "none (heuristic)",
+    modelsUsed: [],
     brief,
     factsClaimed: [],
     claims: [],

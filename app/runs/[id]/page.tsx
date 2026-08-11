@@ -5,9 +5,10 @@ import { Suspense } from "react";
 import { RunReceiptPoller } from "@/components/run-receipt-poller";
 import TopoBackground from "@/components/topo-background";
 import { SOURCES } from "@/lib/marketplace";
+import { loadReceiptPaymentEvidence, type PaymentEvidence } from "@/lib/payment-evidence";
 import { REAL_SOURCES } from "@/lib/real-sources";
 import { getRunReceiptWithStaleTimeout } from "@/lib/run-receipts";
-import { settlementExplorerUrl, settlementLabel } from "@/lib/settlement";
+import { settlementExplorerUrl, settlementLabel, settlementStatusLabel } from "@/lib/settlement";
 
 type ReceiptPageProps = {
   params: Promise<{ id: string }>;
@@ -66,6 +67,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   if (!receipt) notFound();
 
   const payload = receipt.payload;
+  const paymentEvidence = await loadReceiptPaymentEvidence(payload);
   const isComparison = payload.kind === "comparison";
   const comparisonRows = isComparison ? comparisonRowsFromPayload(payload) : [];
   const agentRow = comparisonRows.find((row) => row.key === "reasoning-agent");
@@ -85,6 +87,8 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const citations = asArray(result?.citations) as { sourceId: string; url: string }[];
   const brief = typeof result?.brief === "string" ? result.brief : "";
   const claims = asArray(result?.claims) as SourcedClaim[];
+  const modelsUsed = asArray(result?.modelsUsed).filter((value): value is string => typeof value === "string");
+  const displayedModel = modelsUsed.at(-1) ?? receipt.model;
   const previews = new Set(events.filter((e) => e.kind === "preview").map((e) => e.sourceId));
   const bought = new Map(ledger.map((entry) => [entry.sourceId, entry]));
   const catalog = receipt.mode === "real" ? REAL_SOURCES : SOURCES;
@@ -116,7 +120,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             </div>
             <p className="mt-2 max-w-2xl text-sm text-zinc-400">
               Verifiable Crux artifact for <span className="text-zinc-200">{receipt.subject}</span>: budget, source
-              decisions, final brief, {isComparison ? "baseline comparison, " : ""}and facilitator evidence.
+              decisions, final brief, {isComparison ? "baseline comparison, " : ""}and sanitized facilitator verification evidence.
             </p>
           </div>
           <div className="text-right text-xs text-zinc-500">
@@ -129,8 +133,8 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
           <Stat label={isComparison ? "budget / run" : "budget"} value={money(receipt.budgetUsdc)} />
           <Stat label={isComparison ? "total spent" : "spent"} value={money(receipt.spentUsdc)} />
           <Stat label={isComparison ? "agent buys" : "sources bought"} value={String(ledger.length)} />
-          <Stat label="payer" value={receipt.payerKind === "visitor-wallet" ? "visitor" : "house"} />
-          <Stat label="model" value={receipt.model?.replace("anthropic/", "") ?? "unknown"} />
+          <Stat label="payer" value={payerLabel(receipt.payerKind)} />
+          <Stat label="model" value={modelLabel(displayedModel)} />
         </section>
 
         {receipt.status !== "completed" && (
@@ -234,6 +238,11 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
           </div>
         </section>
 
+        <PaymentEvidenceSection
+          evidence={paymentEvidence}
+          expectedReferences={ledger.filter((entry) => entry.tx).length}
+        />
+
         <section className="mt-5 grid gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4 backdrop-blur-sm md:col-span-2">
             <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -261,7 +270,15 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
               <ProofLine label="Previews" value={String(previews.size)} />
               <ProofLine label="Purchases" value={String(ledger.length)} />
               <ProofLine label="Settlement refs" value={String(ledger.filter((l) => l.tx).length)} />
+              <ProofLine
+                label="Facilitator verified"
+                value={String(paymentEvidence.filter((item) => item.facilitatorVerify?.isValid === true).length)}
+              />
               <ProofLine label="Tokens" value={String(result?.tokens ?? "unknown")} />
+              <ProofLine
+                label="Models used"
+                value={modelsUsed.length > 0 ? modelsUsed.map(modelLabel).join(" → ") : modelLabel(receipt.model)}
+              />
             </div>
             {citations.length > 0 && (
               <div className="mt-4 border-t border-zinc-800 pt-3">
@@ -366,6 +383,101 @@ function ProofLine({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PaymentEvidenceSection({
+  evidence,
+  expectedReferences,
+}: {
+  evidence: PaymentEvidence[];
+  expectedReferences: number;
+}) {
+  if (expectedReferences === 0) return null;
+
+  return (
+    <section className="mt-5 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/45 backdrop-blur-sm">
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">x402 facilitator evidence</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Sanitized requirements, verify, and settle fields joined from the payment ledger. No payment signatures or private data are exposed.
+        </p>
+      </div>
+      {evidence.length === 0 ? (
+        <div className="px-4 py-4 text-sm text-zinc-500">
+          Settlement references are recorded, but detailed facilitator fields are unavailable for these historical rows.
+        </div>
+      ) : (
+        <div className="grid gap-3 p-4 md:grid-cols-2">
+          {evidence.map((item, index) => {
+            const verified = item.facilitatorVerify?.isValid;
+            const settled = item.facilitatorSettle?.success;
+            const reference = item.settlementReference;
+            return (
+              <article
+                key={item.id ?? `${reference ?? "payment"}-${index}`}
+                className="rounded-lg border border-zinc-800 bg-zinc-950/35 p-3 text-xs"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-zinc-200">{item.endpoint ?? "paid resource"}</div>
+                    <div className="mt-0.5 text-zinc-600">{item.network ?? "unknown network"}</div>
+                  </div>
+                  <div className="font-mono text-sm text-teal-300">
+                    {item.amountUsdc ? `$${item.amountUsdc}` : "amount unavailable"}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <EvidenceBadge label="verify" state={verified} positive="valid" negative="invalid" />
+                  <EvidenceBadge label="settle" state={settled} positive="accepted" negative="failed" />
+                </div>
+                <div className="mt-3 space-y-1 text-zinc-500">
+                  <div>payer <span className="font-mono text-zinc-300">{shortAddress(item.payer)}</span></div>
+                  <div>status <span className="text-zinc-300">{settlementStatusLabel(item.settlementStatus)}</span></div>
+                  <div>scheme <span className="text-zinc-300">{item.facilitatorRequirements?.scheme ?? "legacy record"}</span></div>
+                  <div>asset <span className="font-mono text-zinc-300">{shortAddress(item.facilitatorRequirements?.asset)}</span></div>
+                </div>
+                {reference && <div className="mt-2"><SettlementReference tx={reference} /></div>}
+                <details className="mt-3 border-t border-zinc-800 pt-2 text-zinc-500">
+                  <summary className="cursor-pointer text-zinc-400">Sanitized verification fields</summary>
+                  <div className="mt-2 space-y-1 break-all font-mono text-[11px]">
+                    <div>verify.payer: {item.facilitatorVerify?.payer ?? "unavailable"}</div>
+                    <div>settle.payer: {item.facilitatorSettle?.payer ?? "unavailable"}</div>
+                    <div>settle.transaction: {item.facilitatorSettle?.transaction ?? "unavailable"}</div>
+                    <div>payTo: {item.facilitatorRequirements?.payTo ?? "unavailable"}</div>
+                    <div>verifyingContract: {item.facilitatorRequirements?.extra?.verifyingContract ?? "unavailable"}</div>
+                  </div>
+                </details>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function EvidenceBadge({
+  label,
+  state,
+  positive,
+  negative,
+}: {
+  label: string;
+  state: boolean | null | undefined;
+  positive: string;
+  negative: string;
+}) {
+  const text = state === true ? positive : state === false ? negative : "unavailable";
+  const className = state === true
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+    : state === false
+      ? "border-red-500/30 bg-red-500/10 text-red-300"
+      : "border-zinc-700 bg-zinc-900/60 text-zinc-500";
+  return (
+    <div className={`rounded border px-2 py-1 ${className}`}>
+      <span className="uppercase tracking-wide opacity-70">{label}</span> · {text}
+    </div>
+  );
+}
+
 function comparisonRowsFromPayload(payload: Record<string, unknown>): ComparisonRow[] {
   const results = asRecord(payload.results);
   if (!results) return [];
@@ -390,6 +502,22 @@ function comparisonRowsFromPayload(payload: Record<string, unknown>): Comparison
 
 function sourceName(id: string) {
   return SOURCE_NAMES.get(id)?.name ?? pretty(id);
+}
+
+function payerLabel(kind: string) {
+  if (kind === "visitor-wallet") return "visitor";
+  if (kind === "trusted-agent") return "trusted agent";
+  return "house";
+}
+
+function modelLabel(model?: string | null) {
+  if (!model) return "unknown";
+  return model.replace(/^(anthropic|google|openai)\//, "");
+}
+
+function shortAddress(value?: string | null) {
+  if (!value) return "unavailable";
+  return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
 }
 
 function pretty(id: string) {
