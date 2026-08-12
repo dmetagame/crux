@@ -108,9 +108,10 @@ const checks: Check[] = [
       }
       if (
         typeof json.independentExternalPayments !== "number" ||
-        typeof json.independentExternalPayers !== "number"
+        typeof json.independentExternalPayers !== "number" ||
+        typeof json.recoveredTasks !== "number"
       ) {
-        throw new Error("expected numeric independent external-payer metrics");
+        throw new Error("expected numeric external-payer and recovery metrics");
       }
     },
   },
@@ -204,6 +205,17 @@ const checks: Check[] = [
       const location = res.headers.get("location") ?? "";
       if (!location.endsWith("/admin/login")) {
         throw new Error(`expected redirect to /admin/login, got ${location}`);
+      }
+    },
+  },
+  {
+    name: "AI health auth guard",
+    path: "/api/admin/ai-health",
+    expect: (res, body) => {
+      expectStatus(res, 401);
+      const json = parseJson(body);
+      if (json.error !== "Unauthorized") {
+        throw new Error("expected unauthorized AI health response");
       }
     },
   },

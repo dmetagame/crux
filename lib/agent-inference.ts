@@ -25,6 +25,7 @@ export interface AgentInferenceResult<T> {
 
 interface RunAgentInferenceOptions<T> {
   primaryModel: string;
+  preferredRoute?: AgentInferenceRoute;
   purchaseAttempted: () => boolean;
   run: (attempt: AgentInferenceAttempt) => Promise<T>;
   resetBeforeFallback?: () => void;
@@ -36,31 +37,40 @@ const DIRECT_GEMINI_PREFIX = "google-direct/";
 export async function runAgentInferenceWithFallback<T>(
   options: RunAgentInferenceOptions<T>,
 ): Promise<AgentInferenceResult<T>> {
-  const primary: AgentInferenceAttempt = {
+  const gateway: AgentInferenceAttempt = {
     model: options.primaryModel,
     route: "ai-gateway",
     reportedModel: options.primaryModel,
     providerOptions: agentGatewayProviderOptions(options.primaryModel),
   };
+  const directPrimary = options.preferredRoute === "direct-gemini"
+    ? directGeminiAttempt()
+    : null;
+  const primary = directPrimary ?? gateway;
 
   try {
     return { value: await options.run(primary), attempt: primary };
   } catch (primaryError) {
-    if (!shouldUseDirectGeminiFallback(primaryError, options.purchaseAttempted())) {
+    const fallback = primary.route === "direct-gemini"
+      ? gateway
+      : directGeminiAttempt();
+    if (
+      options.purchaseAttempted()
+      || !fallback
+      || !isAiProviderAvailabilityFailure(primaryError)
+    ) {
       throw primaryError;
     }
-
-    const fallback = directGeminiAttempt();
-    if (!fallback) throw primaryError;
 
     options.resetBeforeFallback?.();
     try {
       return {
         value: await options.run(fallback),
         attempt: fallback,
-        fallbackFrom: options.primaryModel,
+        fallbackFrom: primary.reportedModel,
       };
     } catch (fallbackError) {
+      if (options.purchaseAttempted()) throw fallbackError;
       if (isAiProviderAvailabilityFailure(fallbackError)) {
         throw combinedFallbackError(fallbackError);
       }
@@ -78,6 +88,21 @@ export function shouldUseDirectGeminiFallback(
 
 export function hasDirectGeminiFallback() {
   return directGeminiFallbackEnabled() && Boolean(directGeminiApiKey());
+}
+
+export function configuredDirectGeminiReceiptModel() {
+  if (!hasDirectGeminiFallback()) return null;
+  return directGeminiReceiptModel(directGeminiModelId());
+}
+
+export function visitorPreferredInferenceRoute(): AgentInferenceRoute {
+  if (!hasDirectGeminiFallback()) return "ai-gateway";
+  const value = process.env.CRUX_VISITOR_DIRECT_GEMINI_PRIMARY_ENABLED
+    ?.trim()
+    .toLowerCase();
+  return value === "true" || value === "1" || value === "yes"
+    ? "direct-gemini"
+    : "ai-gateway";
 }
 
 export function modelsUsedForInference(
@@ -133,7 +158,7 @@ function combinedFallbackError(fallbackError: unknown) {
     ? fallbackError.message.trim()
     : String(fallbackError);
   const error = new Error(
-    `AI Gateway failed before any source payment, and the direct Gemini fallback also failed: ${detail}`,
+    `Both configured inference routes failed before any source payment: ${detail}`,
     { cause: fallbackError },
   );
   error.name = "AgentInferenceFallbackError";

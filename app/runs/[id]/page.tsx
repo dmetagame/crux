@@ -99,6 +99,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const citations = asArray(result?.citations) as { sourceId: string; url: string }[];
   const brief = typeof result?.brief === "string" ? result.brief : "";
   const claims = asArray(result?.claims) as SourcedClaim[];
+  const recovery = asRecord(result?.recovery);
   const modelsUsed = asArray(result?.modelsUsed).filter((value): value is string => typeof value === "string");
   const displayedModel = modelsUsed.at(-1) ?? receipt.model;
   const expectedPaymentReferences = settlementReferencesFromPayload(payload).length;
@@ -161,6 +162,14 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
             {receipt.status === "failed"
               ? receipt.error ?? "This run failed before it produced a final result."
               : "This run is still active. This receipt will update automatically until it completes or times out."}
+          </section>
+        )}
+
+        {receipt.status === "completed" && recovery?.kind === "deterministic-paid-evidence" && (
+          <section className="mt-5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            The inference provider became unavailable after settlement. Crux completed a transparent, limited brief
+            only from the evidence already paid for and delivered. The paid tool loop was not restarted, and no
+            additional source payment was made.
           </section>
         )}
 
@@ -525,7 +534,7 @@ function payerLabel(kind: string) {
 
 function modelLabel(model?: string | null) {
   if (!model) return "unknown";
-  return model.replace(/^(anthropic|google|openai)\//, "");
+  return model.replace(/^(anthropic|google-direct|google|openai|crux)\//, "");
 }
 
 function shortAddress(value?: string | null) {

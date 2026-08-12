@@ -44,6 +44,13 @@ interface RunResult {
 interface RealRunResult extends RunResult {
   subject: string;
   citations: { sourceId: string; url: string }[];
+  recovery?: {
+    kind: "deterministic-paid-evidence";
+    reason: "provider-unavailable-after-settlement";
+    degraded: true;
+    noAdditionalPayments: true;
+    sourceIds: string[];
+  };
 }
 interface Score {
   topic: string;
@@ -74,6 +81,7 @@ interface Stats {
   independentExternalPayments?: number;
   independentExternalPayers?: number;
   completedTasks?: number;
+  recoveredTasks?: number;
   costPerCompletedTaskUsdc?: number;
   budgetUtilization?: number;
   recent?: RecentPayment[];
@@ -891,13 +899,20 @@ function StatsBar({ stats }: { stats: Stats | null }) {
     { label: "budget utilization", value: stats ? `${((stats.budgetUtilization ?? 0) * 100).toFixed(1)}%` : "—" },
   ];
   return (
-    <div data-animate className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {cells.map((c) => (
-        <div key={c.label} className="rounded-lg border border-zinc-800 bg-zinc-900/55 px-4 py-3 backdrop-blur-sm">
-          <div className="font-display text-2xl font-semibold tracking-tight text-zinc-100">{c.value}</div>
-          <div className="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">{c.label}</div>
-        </div>
-      ))}
+    <div data-animate>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {cells.map((c) => (
+          <div key={c.label} className="rounded-lg border border-zinc-800 bg-zinc-900/55 px-4 py-3 backdrop-blur-sm">
+            <div className="font-display text-2xl font-semibold tracking-tight text-zinc-100">{c.value}</div>
+            <div className="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">{c.label}</div>
+          </div>
+        ))}
+      </div>
+      {!!stats?.recoveredTasks && (
+        <p className="mt-2 text-right text-[11px] text-amber-400/80">
+          {stats.recoveredTasks} degraded evidence-only recovery {stats.recoveredTasks === 1 ? "run" : "runs"} excluded from completed-task metrics
+        </p>
+      )}
     </div>
   );
 }
@@ -1476,6 +1491,12 @@ function RealResultPanel({ done }: { done: RealDone }) {
   return (
     <section className="mt-6 grid gap-4 md:grid-cols-3">
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4 backdrop-blur-sm md:col-span-2">
+        {result.recovery && (
+          <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
+            The inference provider became unavailable after settlement. Crux completed this limited brief only from
+            the already paid evidence and made no additional source payment.
+          </div>
+        )}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Brief — {result.subject}</h3>
           <ReceiptLink done={done} />

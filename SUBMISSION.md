@@ -93,9 +93,11 @@ deterministic and zero-latency; filings enrichment is best-effort live).
 - The demo LLM is Haiku 4.5 — a deliberate budget decision, applied to our own stack: it hits the
   benchmark ceiling (11/11, trap avoided, rumor refused) at a fraction of frontier-model cost, which is
   exactly the cost/value judgment Crux exists to make. If Haiku is unavailable, Gateway can fail over
-  inside the same tool loop without replaying purchases. If the Gateway itself is unavailable before any
-  purchase attempt, Crux can restart once through an independently metered direct Gemini route. It never
-  switches providers after a purchase attempt, and the receipt records which model and route actually ran.
+  inside the same tool loop without replaying purchases. Visitor-funded runs can use an independently metered
+  direct Gemini route after a production health check and can switch routes only before a purchase attempt. Crux never restarts a paid tool
+  loop. If inference disappears after settlement, it can publish a clearly marked, limited recovery brief
+  deterministically from already delivered evidence, without tools or another payment; the receipt records the
+  model, route, and recovery mode.
 - Real-subject mode depends on live public APIs; obscure subjects may return less. Curated example chips
   are unambiguous public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,

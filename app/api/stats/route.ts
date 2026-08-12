@@ -10,6 +10,7 @@ import {
 } from "@/lib/wallet-keys";
 import { ARC_TESTNET_CHAIN_ID, classifySettlementReference } from "@/lib/settlement";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
+import { aggregateRunMetrics, type MetricsRunRow } from "@/lib/run-metrics";
 
 export const maxDuration = 15;
 
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
     );
     const attribution = { houseAddresses, visitorAddresses, externalAddresses, receiptKinds };
     const paymentTotals = aggregatePayments(payments, attribution);
-    const runs = aggregateRuns(runData);
+    const runs = aggregateRunMetrics(runData);
     const recent = payments.slice(0, 8).map(normalizeRecentPayment);
     const last24h = aggregatePayments(
       payments.filter((row) => Date.now() - Date.parse(row.created_at) <= WINDOW_SECONDS * 1000),
@@ -86,7 +87,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(
       {
-        statsVersion: "2026-08-12",
+        statsVersion: "2026-08-13",
         totalPayments: paymentTotals.payments,
         totalAtomicUsdc: paymentTotals.atomic.toString(),
         totalUsdc: atomicToNumber(paymentTotals.atomic),
@@ -100,6 +101,7 @@ export async function GET(req: NextRequest) {
           ? (paymentTotals.payments - paymentTotals.actorCategories.unattributed) / paymentTotals.payments
           : 0,
         completedTasks: runs.completed,
+        recoveredTasks: runs.recovered,
         costPerCompletedTaskUsdc: runs.completed ? atomicToNumber(runs.spent) / runs.completed : 0,
         budgetUtilization: runs.budget > BigInt(0) ? Number(runs.spent * BigInt(10000) / runs.budget) / 10000 : 0,
         runActorCategories: runs.actorCategories,
@@ -186,32 +188,7 @@ function aggregatePayments(rows: PaymentRow[], attribution: PaymentAttribution) 
   return { payments: rows.length, atomic, actorCategories };
 }
 
-type RunRow = {
-  status?: string | null;
-  budget_usdc?: string | number | null;
-  spent_usdc?: string | number | null;
-  payer_kind?: string | null;
-  payload?: Record<string, unknown> | null;
-};
-
-function aggregateRuns(rows: RunRow[]) {
-  let completed = 0;
-  let spent = BigInt(0);
-  let budget = BigInt(0);
-  const actorCategories = { house: 0, visitor: 0, trustedAgent: 0 };
-  for (const row of rows) {
-    if (row.status && row.status !== "completed") continue;
-    if (row.payload?.kind === "comparison") continue;
-    completed += 1;
-    spent += decimalToAtomic(row.spent_usdc);
-    budget += decimalToAtomic(row.budget_usdc);
-    const kind = String(row.payer_kind ?? "house-wallet");
-    if (kind === "visitor-wallet") actorCategories.visitor += 1;
-    else if (kind === "trusted-agent") actorCategories.trustedAgent += 1;
-    else actorCategories.house += 1;
-  }
-  return { completed, spent, budget, actorCategories };
-}
+type RunRow = MetricsRunRow;
 
 function rowAmountAtomic(row: PaymentRow) {
   if (typeof row.amount_atomic === "string" && /^\d+$/.test(row.amount_atomic)) return BigInt(row.amount_atomic);

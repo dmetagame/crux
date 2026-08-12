@@ -20,6 +20,7 @@ import {
 } from "@/lib/run-receipts";
 import { getWalletKey } from "@/lib/wallet";
 import { requireHousePrivateKey } from "@/lib/wallet-keys";
+import { visitorPreferredInferenceRoute } from "@/lib/agent-inference";
 
 export const maxDuration = 60;
 
@@ -147,6 +148,9 @@ export async function POST(req: Request) {
           budget,
           baseUrl,
           buyerKey,
+          preferredInferenceRoute: payerKind === "visitor-wallet"
+            ? visitorPreferredInferenceRoute()
+            : "ai-gateway",
           onEvent: (e) => {
             spentUsdc = spendAfterAgentEvent(spentUsdc, e);
             events.push(e);
@@ -154,6 +158,26 @@ export async function POST(req: Request) {
           },
         });
         spentUsdc = result.spent;
+        if (result.recovery) {
+          void sendOperationalAlert({
+            event: "agent_run_recovered",
+            severity: "warning",
+            title: "Real agent completed from paid evidence",
+            summary:
+              "The inference provider failed after settlement; Crux completed without replaying the paid tool loop.",
+            details: {
+              route: "agent:real",
+              runId: run.id,
+              subject,
+              requestedModel: model,
+              spentUsdc: result.spent,
+              payerKind,
+              recoveryKind: result.recovery.kind,
+              recoveredSourceIds: result.recovery.sourceIds,
+            },
+            dedupeKey: `agent-run-recovered:agent:real:${payerKind}:${model}`,
+          });
+        }
         let receiptId: string | null = null;
         try {
           receiptId = await completeRunReceipt(run.id, {

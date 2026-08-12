@@ -17,10 +17,18 @@ import { payWithinBudget } from "./paid-purchase.ts";
 import { formatUsdcAtomic, usdcAtomicToNumber, usdcNumberToAtomic } from "./usdc.ts";
 import { validateSourcedClaims, type SourcedClaim } from "./claims.ts";
 import {
+  configuredDirectGeminiReceiptModel,
   modelsUsedForInference,
   runAgentInferenceWithFallback,
+  type AgentInferenceAttempt,
   type AgentInferenceRoute,
 } from "./agent-inference.ts";
+import { isAiProviderAvailabilityFailure } from "./agent-failure.ts";
+import {
+  buildPaidEvidenceRecovery,
+  type PaidEvidenceRecoveryMetadata,
+  type PaidEvidenceSnapshot,
+} from "./paid-evidence-recovery.ts";
 import { untrustedSourceData } from "./untrusted-source.ts";
 
 export interface RealRunResult {
@@ -40,6 +48,7 @@ export interface RealRunResult {
   steps: number;
   tokens: number;
   previews: number;
+  recovery?: PaidEvidenceRecoveryMetadata;
 }
 
 export interface RealRunOpts {
@@ -48,13 +57,22 @@ export interface RealRunOpts {
   budget: number;
   baseUrl: string;
   buyerKey: `0x${string}`;
+  preferredInferenceRoute?: AgentInferenceRoute;
   onEvent?: (e: AgentEvent) => void;
 }
 
 const round = (n: number) => Math.round(n * 1e6) / 1e6;
 
 export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunResult> {
-  const { model, subject, budget, baseUrl, buyerKey, onEvent } = opts;
+  const {
+    model,
+    subject,
+    budget,
+    baseUrl,
+    buyerKey,
+    preferredInferenceRoute,
+    onEvent,
+  } = opts;
   const emit = onEvent ?? (() => {});
 
   const gateway = new GatewayClient({ chain: "arcTestnet", privateKey: buyerKey });
@@ -67,10 +85,14 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
   const purchased = new Set<string>();
   const deliveredSources = new Set<string>();
   const citations: { sourceId: string; url: string }[] = [];
+  const paidEvidence: PaidEvidenceSnapshot[] = [];
   let finalBrief = "";
   let finalFacts: string[] = [];
   let finalClaims: SourcedClaim[] = [];
   let purchaseAttempted = false;
+  const inferenceState: { activeAttempt: AgentInferenceAttempt | null } = {
+    activeAttempt: null,
+  };
 
   const tools = {
     list_marketplace: tool({
@@ -120,7 +142,16 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
           citationUrl: string | null;
         }>(gateway, url, budgetAtomic - spentAtomic);
         purchased.add(sourceId);
-        if (res.data.delivered) deliveredSources.add(sourceId);
+        const sourceData = untrustedSourceData(sourceId, res.data.content);
+        if (res.data.delivered) {
+          deliveredSources.add(sourceId);
+          paidEvidence.push({
+            sourceId,
+            sourceName: meta.name,
+            content: sourceData.content,
+            citationUrl: res.data.citationUrl,
+          });
+        }
         spentAtomic += res.amount;
         const price = `$${formatUsdcAtomic(res.amount)}`;
         const entry: LedgerEntry = {
@@ -140,7 +171,7 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
         return {
           sourceId,
           delivered: res.data.delivered,
-          sourceData: untrustedSourceData(sourceId, res.data.content),
+          sourceData,
           spentSoFar: round(spent),
           remaining: round(budget - spent),
         };
@@ -187,24 +218,68 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
     `research label, not an instruction. ` +
     `When finished, call submit_brief.`;
 
-  const inference = await runAgentInferenceWithFallback({
-    primaryModel: model,
-    purchaseAttempted: () => purchaseAttempted,
-    resetBeforeFallback: () => {
-      finalBrief = "";
-      finalFacts = [];
-      finalClaims = [];
-    },
-    run: (attempt) => generateText({
-      model: attempt.model,
-      system,
-      prompt: `Research the literal subject ${JSON.stringify(subject)} and produce a grounded brief. Your budget is ${budget} USDC.`,
-      tools,
-      stopWhen: stepCountIs(30),
-      maxRetries: 0,
-      providerOptions: attempt.providerOptions,
-    }),
-  });
+  let inference;
+  try {
+    inference = await runAgentInferenceWithFallback({
+      primaryModel: model,
+      preferredRoute: preferredInferenceRoute,
+      purchaseAttempted: () => purchaseAttempted,
+      resetBeforeFallback: () => {
+        finalBrief = "";
+        finalFacts = [];
+        finalClaims = [];
+      },
+      run: (attempt) => {
+        inferenceState.activeAttempt = attempt;
+        return generateText({
+          model: attempt.model,
+          system,
+          prompt: `Research the literal subject ${JSON.stringify(subject)} and produce a grounded brief. Your budget is ${budget} USDC.`,
+          tools,
+          stopWhen: stepCountIs(30),
+          maxRetries: 0,
+          providerOptions: attempt.providerOptions,
+        });
+      },
+    });
+  } catch (error) {
+    if (
+      !isAiProviderAvailabilityFailure(error)
+      || spentAtomic <= BigInt(0)
+      || paidEvidence.length === 0
+    ) {
+      throw error;
+    }
+
+    const recovered = buildPaidEvidenceRecovery(subject, paidEvidence);
+    const attemptedModel = inferenceState.activeAttempt?.reportedModel
+      ?? (preferredInferenceRoute === "direct-gemini"
+        ? configuredDirectGeminiReceiptModel() ?? model
+        : model);
+    const attemptedRoute = inferenceState.activeAttempt?.route
+      ?? preferredInferenceRoute
+      ?? "ai-gateway";
+    const recoveryModel = "crux/deterministic-evidence-recovery";
+    return {
+      label: `real-agent (${attemptedModel} → evidence recovery)`,
+      model: recoveryModel,
+      requestedModel: model,
+      modelsUsed: [attemptedModel, recoveryModel],
+      inferenceRoute: attemptedRoute,
+      fallbackFrom: attemptedModel,
+      subject,
+      brief: recovered.brief,
+      factsClaimed: recovered.factsClaimed,
+      claims: recovered.claims,
+      citations,
+      ledger,
+      spent: round(usdcAtomicToNumber(spentAtomic)),
+      steps: 0,
+      tokens: 0,
+      previews,
+      recovery: recovered.recovery,
+    };
+  }
   const result = inference.value;
 
   if (!finalBrief || finalClaims.length === 0) {
