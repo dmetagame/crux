@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     marketplace: `${origin}/api/marketplace`,
     publicStats: `${origin}/api/stats`,
     runStatus: `${origin}/api/runs/{id}`,
+    paymentProof: `${origin}/api/payments/by-reference/{reference}`,
     capabilities: [
       "x402-paid live data resources",
       "visitor-funded research runs",

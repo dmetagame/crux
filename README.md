@@ -241,6 +241,7 @@ npm run dev                 # start the seller (marketplace + x402 endpoints)
 npm run research-agent      # run the autonomous agent (brief + spend ledger + score)
 npm run compare             # the money-shot: agent vs. baselines, side-by-side
 npm run external-demo       # pay a REAL external x402 service on Base (via the Bazaar)
+npm run external:pay-crux   # independent Arc wallet pays a capped Crux x402 resource
 npm run check:migrations    # verify Supabase migration naming/order
 npm run verify:migrations   # apply all migrations to disposable Postgres
 npm run verify:production   # smoke-check the deployed production app

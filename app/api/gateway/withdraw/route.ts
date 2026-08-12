@@ -16,12 +16,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
+  CHAIN_CONFIGS,
   GatewayClient,
   type SupportedChainName,
   GATEWAY_DOMAINS,
 } from "@circle-fin/x402-batching/client";
+import { isAddress, pad, zeroAddress } from "viem";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -29,6 +32,11 @@ import {
   isAdminSession,
   isSameOriginAdminMutation,
 } from "@/lib/admin-auth";
+import {
+  parseGatewayFeeEstimate,
+  parseWithdrawalUsdc,
+} from "@/lib/gateway-withdrawal";
+import { formatUsdcAtomic } from "@/lib/usdc";
 import { requireSellerPrivateKey } from "@/lib/wallet-keys";
 
 const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
@@ -40,6 +48,8 @@ const SUPPORTED_CHAIN_LABELS: Record<string, string> = {
   avalancheFuji: "Avalanche Fuji",
   polygonAmoy: "Polygon Amoy",
 };
+const ALLOWED_DESTINATION_CHAINS = new Set(Object.keys(SUPPORTED_CHAIN_LABELS));
+const GATEWAY_ESTIMATE_API = "https://gateway-api-testnet.circle.com/v1/estimate";
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -72,12 +82,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.json();
-  const { amount, destinationChain, destinationAddress } = body as {
-    amount: string;
-    destinationChain: string;
-    destinationAddress?: string;
-  };
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "Request body must be a JSON object" }, { status: 400 });
+  }
+
+  const input = body as Record<string, unknown>;
+  const amount = typeof input.amount === "string" ? input.amount.trim() : "";
+  const destinationChain =
+    typeof input.destinationChain === "string" ? input.destinationChain.trim() : "";
+  const destinationAddress =
+    typeof input.destinationAddress === "string"
+      ? input.destinationAddress.trim() || undefined
+      : input.destinationAddress == null
+        ? undefined
+        : null;
 
   if (!amount || !destinationChain) {
     return NextResponse.json(
@@ -85,8 +109,24 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
+  const amountAtomic = parseWithdrawalUsdc(amount);
+  if (amountAtomic == null || amountAtomic <= BigInt(0)) {
+    return NextResponse.json(
+      { error: "amount must be a positive USDC value with at most 6 decimals" },
+      { status: 400 },
+    );
+  }
+  if (destinationAddress === null || (destinationAddress && !isAddress(destinationAddress))) {
+    return NextResponse.json(
+      { error: "destinationAddress must be a valid EVM address" },
+      { status: 400 },
+    );
+  }
 
-  if (!(destinationChain in GATEWAY_DOMAINS)) {
+  if (
+    !ALLOWED_DESTINATION_CHAINS.has(destinationChain) ||
+    !Object.prototype.hasOwnProperty.call(GATEWAY_DOMAINS, destinationChain)
+  ) {
     return NextResponse.json(
       { error: `Unsupported chain: ${destinationChain}` },
       { status: 400 },
@@ -97,64 +137,65 @@ export async function POST(req: NextRequest) {
     chain: "arcTestnet",
     privateKey,
   });
+  const normalizedAmount = formatUsdcAtomic(amountAtomic);
+  const recipient = (destinationAddress ?? gateway.address) as `0x${string}`;
 
   const isCrossChain = destinationChain !== "arcTestnet";
 
-  // Pre-check: ensure the seller wallet has native tokens for gas on source chain
+  let withdrawalFees: Awaited<ReturnType<typeof estimateWithdrawalFees>>;
   try {
+    withdrawalFees = await estimateWithdrawalFees({
+      gateway,
+      destinationChain: destinationChain as SupportedChainName,
+      recipient,
+      amountAtomic,
+    });
     const balances = await gateway.getBalances();
-    if (
-      !balances.wallet.formatted ||
-      Number(balances.wallet.formatted) === 0
-    ) {
+    const requiredAtomic = amountAtomic + withdrawalFees.maxFeeAtomic;
+    if (balances.gateway.available < requiredAtomic) {
       return NextResponse.json(
         {
-          error: `Seller wallet (${gateway.address}) has no native tokens on Arc Testnet to pay for gas fees. Fund it with testnet ETH first.`,
-        },
-        { status: 400 },
-      );
-    }
-
-    const availableUsdc = Number(balances.gateway.formattedAvailable);
-    if (availableUsdc < Number(amount)) {
-      return NextResponse.json(
-        {
-          error: `Insufficient gateway balance: ${balances.gateway.formattedAvailable} USDC available, tried to withdraw ${amount} USDC.`,
+          error: `Insufficient gateway balance: ${balances.gateway.formattedAvailable} USDC available. Withdrawing ${normalizedAmount} USDC requires up to ${formatUsdcAtomic(withdrawalFees.maxFeeAtomic)} USDC of fee headroom.`,
         },
         { status: 400 },
       );
     }
   } catch (balanceError) {
-    console.error("Failed to check balances before withdraw:", balanceError);
+    console.error("Failed to estimate fees or check balances before withdraw:", balanceError);
+    return NextResponse.json(
+      { error: "Could not estimate Gateway fees or verify the seller balance. Try again shortly." },
+      { status: 503 },
+    );
   }
 
-  // Pre-check: for cross-chain withdrawals, verify gas on the destination chain
-  if (isCrossChain) {
-    try {
-      const destGateway = new GatewayClient({
-        chain: destinationChain as SupportedChainName,
-        privateKey,
-      });
-      const destBalances = await destGateway.getBalances();
-      if (
-        !destBalances.wallet.formatted ||
-        Number(destBalances.wallet.formatted) === 0
-      ) {
-        const chainLabel =
-          SUPPORTED_CHAIN_LABELS[destinationChain] ?? destinationChain;
-        return NextResponse.json(
-          {
-            error: `Seller wallet (${destGateway.address}) has no native tokens on ${chainLabel} to pay for the mint transaction gas fees. Fund it with testnet ETH on ${chainLabel} first.`,
-          },
-          { status: 400 },
-        );
-      }
-    } catch (destBalanceError) {
-      console.error(
-        "Failed to check destination chain gas balance:",
-        destBalanceError,
+  // Pre-check native gas on the destination chain, including same-chain Arc withdrawals.
+  try {
+    const destGateway = new GatewayClient({
+      chain: destinationChain as SupportedChainName,
+      privateKey,
+    });
+    const destinationGas = await destGateway.publicClient.getBalance({
+      address: destGateway.address,
+    });
+    if (destinationGas === BigInt(0)) {
+      const chainLabel =
+        SUPPORTED_CHAIN_LABELS[destinationChain] ?? destinationChain;
+      return NextResponse.json(
+        {
+          error: `Seller wallet (${destGateway.address}) has no native gas token on ${chainLabel}. Fund it on ${chainLabel} before retrying.`,
+        },
+        { status: 400 },
       );
     }
+  } catch (destBalanceError) {
+    console.error(
+      "Failed to check destination chain gas balance:",
+      destBalanceError,
+    );
+    return NextResponse.json(
+      { error: "Could not verify destination-chain gas. Try again shortly." },
+      { status: 503 },
+    );
   }
 
   const supabase = getSupabase();
@@ -163,9 +204,9 @@ export async function POST(req: NextRequest) {
   const { data: withdrawal, error: insertError } = await supabase
     .from("withdrawals")
     .insert({
-      amount_usdc: amount,
+      amount_usdc: normalizedAmount,
       destination_chain: destinationChain,
-      destination_address: destinationAddress ?? gateway.address,
+      destination_address: recipient,
       status: "submitted",
     })
     .select()
@@ -179,11 +220,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await gateway.withdraw(amount, {
+    const result = await gateway.withdraw(normalizedAmount, {
       chain: destinationChain as SupportedChainName,
-      recipient: destinationAddress
-        ? (destinationAddress as `0x${string}`)
-        : undefined,
+      recipient,
+      maxFee: formatUsdcAtomic(withdrawalFees.maxFeeAtomic),
     });
 
     // Update the withdrawal record with the transaction hash
@@ -199,6 +239,8 @@ export async function POST(req: NextRequest) {
       sourceChain: result.sourceChain,
       destinationChain: result.destinationChain,
       recipient: result.recipient,
+      estimatedFee: formatUsdcAtomic(withdrawalFees.estimatedFeeAtomic),
+      maxFee: formatUsdcAtomic(withdrawalFees.maxFeeAtomic),
       status: "confirmed",
     });
   } catch (error) {
@@ -220,10 +262,50 @@ export async function POST(req: NextRequest) {
       raw.includes("gas required exceeds allowance")
     ) {
       message = isCrossChain
-        ? `Seller wallet (${gateway.address}) has no native tokens on ${chainLabel} to pay for the CCTP mint transaction. Fund it with testnet ETH on ${chainLabel} and retry.`
-        : `Seller wallet has insufficient native tokens to pay for gas. Fund ${gateway.address} with testnet ETH and retry.`;
+        ? `Seller wallet (${gateway.address}) has insufficient native gas on ${chainLabel} for the transfer. Fund it on ${chainLabel} and retry.`
+        : `Seller wallet has insufficient native gas on Arc Testnet. Fund ${gateway.address} at faucet.circle.com and retry.`;
     }
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function estimateWithdrawalFees(input: {
+  gateway: GatewayClient;
+  destinationChain: SupportedChainName;
+  recipient: `0x${string}`;
+  amountAtomic: bigint;
+}) {
+  const destination = CHAIN_CONFIGS[input.destinationChain];
+  const response = await fetch(GATEWAY_ESTIMATE_API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+    body: JSON.stringify([
+      {
+        spec: {
+          version: 1,
+          sourceDomain: input.gateway.chainConfig.domain,
+          destinationDomain: destination.domain,
+          sourceContract: pad(input.gateway.chainConfig.gatewayWallet.toLowerCase() as `0x${string}`, { size: 32 }),
+          destinationContract: pad(destination.gatewayMinter.toLowerCase() as `0x${string}`, { size: 32 }),
+          sourceToken: pad(input.gateway.chainConfig.usdc.toLowerCase() as `0x${string}`, { size: 32 }),
+          destinationToken: pad(destination.usdc.toLowerCase() as `0x${string}`, { size: 32 }),
+          sourceDepositor: pad(input.gateway.address.toLowerCase() as `0x${string}`, { size: 32 }),
+          destinationRecipient: pad(input.recipient.toLowerCase() as `0x${string}`, { size: 32 }),
+          sourceSigner: pad(input.gateway.address.toLowerCase() as `0x${string}`, { size: 32 }),
+          destinationCaller: pad(zeroAddress, { size: 32 }),
+          value: input.amountAtomic.toString(),
+          salt: `0x${randomBytes(32).toString("hex")}`,
+          hookData: "0x",
+        },
+      },
+    ]),
+  });
+  if (!response.ok) {
+    throw new Error(`Gateway fee estimate failed with HTTP ${response.status}`);
+  }
+
+  return parseGatewayFeeEstimate(await response.json());
 }

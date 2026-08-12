@@ -189,7 +189,7 @@ export function WithdrawDialog({ maxAvailable, onWithdraw }: WithdrawDialogProps
             <Label htmlFor="withdraw-amount" className="text-xs">
               Amount (USDC)
               {maxAvailable !== "0" && (
-                <span className="text-muted-foreground ml-1">max: {maxAvailable}</span>
+                <span className="text-muted-foreground ml-1">balance: {maxAvailable}</span>
               )}
             </Label>
             <Input
@@ -199,6 +199,9 @@ export function WithdrawDialog({ maxAvailable, onWithdraw }: WithdrawDialogProps
               onChange={(event) => setAmount(event.target.value)}
               className="font-mono"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Circle Gateway fees are estimated at submission and need additional balance headroom.
+            </p>
           </div>
 
           <Button onClick={handleWithdraw} disabled={submitting || !amount} className="w-full">

@@ -23,6 +23,15 @@ curl ${baseUrl}/api/marketplace`,
     body: `curl -i "${baseUrl}/api/real/wikipedia?subject=Coinbase"`,
   },
   {
+    title: "Verify a paid resource",
+    body: `curl "${baseUrl}/api/payments/by-reference/$SETTLEMENT_REFERENCE"`,
+  },
+  {
+    title: "Independent payer proof",
+    body: `# Put ARC_TESTNET_PRIVATE_KEY in gitignored .env.external.local
+npm run external:pay-crux`,
+  },
+  {
     title: "Create a visitor wallet",
     body: `curl -sS -X POST "${baseUrl}/api/wallet/create"`,
   },

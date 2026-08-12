@@ -46,6 +46,27 @@ PAYMENT-REQUIRED: <base64 payment requirements>
 After your x402 client pays, the same URL returns the purchased JSON. These
 endpoints do not use a Crux API key.
 
+The repository also includes a bounded partner proof command. Run it from an
+independent wallet/repository, never with Crux's house key:
+
+```bash
+cat > .env.external.local <<'EOF'
+ARC_TESTNET_PRIVATE_KEY=0x...
+CRUX_MAX_SPEND_USDC=0.001
+EOF
+
+npm run external:pay-crux
+```
+
+`.env.external.local` is gitignored. The command defaults to the `$0.001` quote
+endpoint, refuses a higher quote or non-Crux origin, enforces an absolute
+`$0.10` test-USDC ceiling, signs the inspected challenge rather than refetching
+an unchecked price, and prints
+the payer address, settlement reference, and public sanitized proof URL. Send
+those three values to the Crux maintainer; after the address is explicitly added
+to `CRUX_EXTERNAL_X402_PAYER_ADDRESSES`, `/api/stats` counts it as an independent
+external payer rather than guessing from unknown addresses.
+
 Useful paid surfaces:
 
 - `GET /api/real/{source}?subject=...`
@@ -146,6 +167,12 @@ Poll a receipt/run:
 
 ```bash
 curl "$CRUX_BASE_URL/api/runs/$RECEIPT_ID"
+```
+
+Inspect one direct-resource payment by settlement reference:
+
+```bash
+curl "$CRUX_BASE_URL/api/payments/by-reference/$SETTLEMENT_REFERENCE"
 ```
 
 ## Auth Summary

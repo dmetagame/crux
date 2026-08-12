@@ -6,6 +6,10 @@ import {
 } from "../lib/agent-models.ts";
 import { spendAfterAgentEvent } from "../lib/agent-event-spend.ts";
 import { gitShaMatches } from "../lib/deployment-version.ts";
+import {
+  parseGatewayFeeEstimate,
+  parseWithdrawalUsdc,
+} from "../lib/gateway-withdrawal.ts";
 import { sanitizePaymentEvidenceRow } from "../lib/payment-evidence.ts";
 import { classifyPaymentActor } from "../lib/payer-attribution.ts";
 import { settlementReferencesFromPayload } from "../lib/receipt-settlements.ts";
@@ -155,6 +159,30 @@ test("deployment SHA matching accepts full and short equivalents only", () => {
   const full = "beb8891f332b2d6aac07e174f741b39403aef3c6";
   assert.equal(gitShaMatches(full, "beb8891"), true);
   assert.equal(gitShaMatches(full, "deadbee"), false);
+});
+
+test("withdrawal amounts use exact USDC units and reject unsafe forms", () => {
+  assert.equal(parseWithdrawalUsdc("1.000001"), BigInt(1_000_001));
+  assert.equal(parseWithdrawalUsdc("1e6"), null);
+  assert.equal(parseWithdrawalUsdc("1.0000001"), null);
+});
+
+test("Gateway fee estimates support live and documented response shapes", () => {
+  assert.deepEqual(
+    parseGatewayFeeEstimate([{ burnIntent: { maxFee: "3850" } }]),
+    { estimatedFeeAtomic: BigInt(3850), maxFeeAtomic: BigInt(13_850) },
+  );
+  assert.deepEqual(
+    parseGatewayFeeEstimate({
+      body: [{ burnIntent: { maxFee: "4000" } }],
+      fees: { total: "0.005", token: "USDC" },
+    }),
+    { estimatedFeeAtomic: BigInt(5000), maxFeeAtomic: BigInt(15_000) },
+  );
+  assert.throws(
+    () => parseGatewayFeeEstimate({ body: [], fees: { total: "0.01", token: "USDC" } }),
+    /invalid response/,
+  );
 });
 
 function withEnv(values: Record<string, string | undefined>, run: () => void) {

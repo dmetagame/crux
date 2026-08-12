@@ -70,6 +70,8 @@ interface Stats {
   avgUsdc: number;
   distinctPayers: number;
   onboardedWallets?: number;
+  independentExternalPayments?: number;
+  independentExternalPayers?: number;
   completedTasks?: number;
   costPerCompletedTaskUsdc?: number;
   budgetUtilization?: number;
@@ -600,6 +602,13 @@ function AgentPageContent() {
           <p className="mt-1.5 text-[11px] text-zinc-500">
             + <span className="text-teal-300">{stats.onboardedWallets.toLocaleString()}</span> wallet
             {stats.onboardedWallets === 1 ? "" : "s"} self-funded by visitors paying from their own balance.
+          </p>
+        )}
+        {!!stats?.independentExternalPayers && (
+          <p className="mt-1.5 text-[11px] text-zinc-500">
+            + <span className="text-violet-300">{stats.independentExternalPayers.toLocaleString()}</span> independent external x402 payer
+            {stats.independentExternalPayers === 1 ? "" : "s"} made {stats.independentExternalPayments?.toLocaleString() ?? "0"} direct payment
+            {stats.independentExternalPayments === 1 ? "" : "s"} to Crux resources.
           </p>
         )}
 

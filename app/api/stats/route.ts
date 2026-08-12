@@ -64,7 +64,11 @@ export async function GET(req: NextRequest) {
     const houseAddresses = safeHouseAddresses();
     const visitorAddresses = new Set(walletAddresses);
     inferReceiptPayerAddresses(payments, receiptKinds, houseAddresses, visitorAddresses);
-    const externalAddresses = safeExternalAddresses();
+    const externalAddresses = new Set(
+      [...safeExternalAddresses()].filter(
+        (address) => !houseAddresses.has(address) && !visitorAddresses.has(address),
+      ),
+    );
     const attribution = { houseAddresses, visitorAddresses, externalAddresses, receiptKinds };
     const paymentTotals = aggregatePayments(payments, attribution);
     const runs = aggregateRuns(runData);
@@ -76,10 +80,13 @@ export async function GET(req: NextRequest) {
     const paidVisitorWallets = new Set(
       [...payerSet].filter((payer) => walletAddresses.has(payer)),
     );
+    const paidExternalPayers = new Set(
+      [...payerSet].filter((payer) => externalAddresses.has(payer)),
+    );
 
     return NextResponse.json(
       {
-        statsVersion: "2026-08-11",
+        statsVersion: "2026-08-12",
         totalPayments: paymentTotals.payments,
         totalAtomicUsdc: paymentTotals.atomic.toString(),
         totalUsdc: atomicToNumber(paymentTotals.atomic),
@@ -87,6 +94,8 @@ export async function GET(req: NextRequest) {
         distinctPayers: payerSet.size,
         onboardedWallets: paidVisitorWallets.size,
         actorCategories: paymentTotals.actorCategories,
+        independentExternalPayments: paymentTotals.actorCategories.externalX402,
+        independentExternalPayers: paidExternalPayers.size,
         payerAttributionCoverage: paymentTotals.payments
           ? (paymentTotals.payments - paymentTotals.actorCategories.unattributed) / paymentTotals.payments
           : 0,

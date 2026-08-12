@@ -106,6 +106,19 @@ export async function GET(req: NextRequest) {
           },
         },
       },
+      "/api/payments/by-reference/{reference}": {
+        get: {
+          summary: "Read sanitized proof for one x402 settlement reference",
+          parameters: [
+            { name: "reference", in: "path", required: true, schema: { type: "string", maxLength: 512 } },
+          ],
+          responses: {
+            "200": { description: "Sanitized facilitator requirements, verify, and settle evidence" },
+            "404": { description: "Payment proof not found" },
+          },
+          "x-rateLimit": "120 requests/minute/IP",
+        },
+      },
       "/api/real/{source}": {
         get: {
           summary: "Buy a live public-data source for a real subject",

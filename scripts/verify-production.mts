@@ -17,6 +17,9 @@ const expectedGitSha = process.env.CRUX_EXPECTED_GIT_SHA?.trim() || null;
 const goldenProofReceiptId =
   process.env.CRUX_GOLDEN_PROOF_RECEIPT_ID?.trim() ||
   "f0834987-c823-4b62-917c-9b7b3ed964cc";
+const goldenPaymentReference =
+  process.env.CRUX_GOLDEN_PAYMENT_REFERENCE?.trim() ||
+  "6c64d765-9e4d-40bd-94bf-1cb4ae5ba495";
 
 const checks: Check[] = [
   {
@@ -56,6 +59,9 @@ const checks: Check[] = [
       if (typeof json.openapi !== "string" || !json.openapi.endsWith("/openapi.json")) {
         throw new Error("expected OpenAPI discovery URL");
       }
+      if (typeof json.paymentProof !== "string" || !json.paymentProof.includes("/api/payments/by-reference/")) {
+        throw new Error("expected public payment-proof discovery URL");
+      }
     },
   },
   {
@@ -77,6 +83,21 @@ const checks: Check[] = [
     },
   },
   {
+    name: "direct x402 payment proof",
+    path: `/api/payments/by-reference/${goldenPaymentReference}`,
+    expect: (res, body) => {
+      expectStatus(res, 200);
+      const json = parseJson(body);
+      const payment = json.payment;
+      if (payment?.facilitatorVerify?.isValid !== true) {
+        throw new Error("expected valid facilitator verification evidence");
+      }
+      if (payment?.facilitatorSettle?.success !== true) {
+        throw new Error("expected successful facilitator settlement evidence");
+      }
+    },
+  },
+  {
     name: "stats dashboard data",
     path: "/api/stats",
     expect: (res, body) => {
@@ -84,6 +105,12 @@ const checks: Check[] = [
       const json = parseJson(body);
       if (typeof json.totalPayments !== "number" || typeof json.totalUsdc !== "number") {
         throw new Error("expected numeric totalPayments and totalUsdc");
+      }
+      if (
+        typeof json.independentExternalPayments !== "number" ||
+        typeof json.independentExternalPayers !== "number"
+      ) {
+        throw new Error("expected numeric independent external-payer metrics");
       }
     },
   },
