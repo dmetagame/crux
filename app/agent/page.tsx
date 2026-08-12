@@ -60,6 +60,7 @@ interface TopicMeta {
   blurb: string;
 }
 type ReceiptMeta = { receiptId?: string | null; receiptUrl?: string | null };
+type StreamFailure = ReceiptMeta & { paidEvidenceRetained?: boolean };
 type Done = { result: RunResult; score: Score } & ReceiptMeta;
 type RealDone = { result: RealRunResult } & ReceiptMeta;
 type WorkspaceRole = "visitor" | "operator";
@@ -239,6 +240,7 @@ function AgentPageContent() {
   const [running, setRunning] = useState(false);
   const [events, setEvents] = useState<{ label?: string; ev: AgentEvent }[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [failureReceipt, setFailureReceipt] = useState<StreamFailure | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
 
   // benchmark state
@@ -384,11 +386,13 @@ function AgentPageContent() {
     setRunning(true);
     setEvents([]);
     setErr(null);
+    setFailureReceipt(null);
   }
 
   function requireOperator() {
     if (adminSession?.authenticated) return true;
     setRole("operator");
+    setFailureReceipt(null);
     setErr("Sign in as admin to run from the operator wallet.");
     router.push(OPERATOR_LOGIN_HREF);
     return false;
@@ -399,6 +403,7 @@ function AgentPageContent() {
     if (running || !nextSubject) return;
     setSubject(nextSubject);
     if (role === "visitor" && !useOwnWallet) {
+      setFailureReceipt(null);
       setErr("Create and fund a visitor wallet before running as a visitor.");
       return;
     }
@@ -418,7 +423,14 @@ function AgentPageContent() {
         (o) => {
           if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
           else if (o.type === "done") setRealResult({ result: o.result, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
-          else if (o.type === "error") setErr(o.message);
+          else if (o.type === "error") {
+            setErr(o.message);
+            setFailureReceipt({
+              receiptId: o.receiptId,
+              receiptUrl: o.receiptUrl,
+              paidEvidenceRetained: o.paidEvidenceRetained,
+            });
+          }
         },
         undefined,
         {
@@ -453,7 +465,14 @@ function AgentPageContent() {
         (o) => {
           if (o.type === "event") setEvents((e) => [...e, { ev: o.event }]);
           else if (o.type === "done") setResult({ result: o.result, score: o.score, receiptId: o.receiptId, receiptUrl: o.receiptUrl });
-          else if (o.type === "error") setErr(o.message);
+          else if (o.type === "error") {
+            setErr(o.message);
+            setFailureReceipt({
+              receiptId: o.receiptId,
+              receiptUrl: o.receiptUrl,
+              paidEvidenceRetained: o.paidEvidenceRetained,
+            });
+          }
         },
         undefined,
         {
@@ -525,7 +544,14 @@ function AgentPageContent() {
               comparison[s.label] = done;
               setCompare((c) => ({ ...c, [s.label]: done }));
             }
-            else if (o.type === "error") setErr(o.message);
+            else if (o.type === "error") {
+              setErr(o.message);
+              setFailureReceipt({
+                receiptId: o.receiptId,
+                receiptUrl: o.receiptUrl,
+                paidEvidenceRetained: o.paidEvidenceRetained,
+              });
+            }
           },
           undefined,
           {
@@ -641,7 +667,15 @@ function AgentPageContent() {
           </TabButton>
         </div>
 
-        {err && <div className="mt-4 rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300">Error: {err}</div>}
+        {err && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-900 bg-red-950/50 p-3 text-sm text-red-300">
+            <span>Error: {err}</span>
+            <ReceiptLink
+              done={failureReceipt ?? {}}
+              label={failureReceipt?.paidEvidenceRetained ? "Inspect retained payment proof ↗" : "Open failed run receipt ↗"}
+            />
+          </div>
+        )}
 
         {/* ============================= REAL TAB ============================= */}
         {tab === "real" && (

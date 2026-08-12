@@ -84,7 +84,18 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
           .filter(Boolean)
       : asArray(payload.events)
   ) as ReceiptEvent[];
-  const ledger = asArray(result?.ledger) as LedgerEntry[];
+  const resultLedger = asArray(result?.ledger) as LedgerEntry[];
+  const eventLedger = events.filter((event): event is Extract<ReceiptEvent, { kind: "purchase" }> =>
+    event.kind === "purchase",
+  ).map((event, index) => ({
+    n: index + 1,
+    sourceId: event.sourceId,
+    price: event.price,
+    delivered: event.delivered,
+    rationale: event.rationale,
+    tx: event.tx,
+  }));
+  const ledger = resultLedger.length > 0 ? resultLedger : eventLedger;
   const citations = asArray(result?.citations) as { sourceId: string; url: string }[];
   const brief = typeof result?.brief === "string" ? result.brief : "";
   const claims = asArray(result?.claims) as SourcedClaim[];

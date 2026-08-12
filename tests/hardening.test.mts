@@ -4,14 +4,24 @@ import {
   agentFallbackModels,
   modelsUsedFromSteps,
 } from "../lib/agent-models.ts";
+import {
+  agentFailureDetails,
+  isAiCapacityFailure,
+  isVisitorWalletFundingFailure,
+} from "../lib/agent-failure.ts";
 import { spendAfterAgentEvent } from "../lib/agent-event-spend.ts";
 import { gitShaMatches } from "../lib/deployment-version.ts";
+import {
+  proofReferenceFromUrl,
+  verifyExternalPaymentProof,
+} from "../lib/external-payment-proof.ts";
 import {
   parseGatewayFeeEstimate,
   parseWithdrawalUsdc,
 } from "../lib/gateway-withdrawal.ts";
 import { sanitizePaymentEvidenceRow } from "../lib/payment-evidence.ts";
 import { classifyPaymentActor } from "../lib/payer-attribution.ts";
+import { gatewayFundingPlan, gatewayRunReadiness } from "../lib/release-readiness.ts";
 import { settlementReferencesFromPayload } from "../lib/receipt-settlements.ts";
 import { untrustedSourceData } from "../lib/untrusted-source.ts";
 import { visitorWalletReadiness } from "../lib/wallet-readiness.ts";
@@ -27,6 +37,41 @@ test("Gateway fallback order excludes the requested primary and duplicates", () 
       "openai/gpt-oss-20b",
     ]);
   });
+});
+
+test("AI capacity failures become safe public messages and retain paid evidence", () => {
+  const error = Object.assign(new Error("AI Gateway returned 429: account-wide rate limit reached"), {
+    name: "AI_APICallError",
+    statusCode: 429,
+  });
+  assert.equal(isAiCapacityFailure(error), true);
+  assert.equal(isVisitorWalletFundingFailure(error), false);
+
+  const beforeSpend = agentFailureDetails(error, 0);
+  assert.equal(beforeSpend.kind, "ai-capacity");
+  assert.equal(beforeSpend.paidEvidenceRetained, false);
+  assert.match(beforeSpend.publicMessage, /No source payments were made/);
+
+  const afterSpend = agentFailureDetails(error, 0.012);
+  assert.equal(afterSpend.paidEvidenceRetained, true);
+  assert.match(afterSpend.publicMessage, /0\.012 USDC settled/);
+  assert.match(afterSpend.publicMessage, /did not retry/);
+});
+
+test("wallet funding failures stay distinct from model capacity failures", () => {
+  assert.equal(
+    isVisitorWalletFundingFailure(new Error("insufficient USDC balance for Gateway deposit")),
+    true,
+  );
+  assert.equal(
+    isVisitorWalletFundingFailure(new Error("source API returned HTTP 500")),
+    false,
+  );
+  const providerBilling = Object.assign(new Error("insufficient funds for AI provider billing"), {
+    name: "AI_APICallError",
+  });
+  assert.equal(isAiCapacityFailure(providerBilling), true);
+  assert.equal(isVisitorWalletFundingFailure(providerBilling), false);
 });
 
 test("actual model IDs are read from Gateway response bodies", () => {
@@ -115,6 +160,87 @@ test("public payment evidence exposes only sanitized proof fields", () => {
   ]);
 });
 
+test("null Arc proof metadata remains null instead of becoming zero", () => {
+  const evidence = sanitizePaymentEvidenceRow({
+    settlement_reference: "gateway-ref",
+    arc_chain_id: null,
+    facilitator_verify: { isValid: true },
+    facilitator_settle: { success: true },
+  });
+  assert.equal(evidence.arcChainId, null);
+});
+
+test("independent payment proof validates the complete Arc Gateway evidence chain", () => {
+  const payer = "0x1111111111111111111111111111111111111111";
+  const seller = "0x2222222222222222222222222222222222222222";
+  const reference = "gateway-reference-1";
+  const proof = externalProofFixture({ payer, seller, reference });
+  const verified = verifyExternalPaymentProof({
+    body: proof,
+    expectedPayer: payer,
+    expectedPayTo: seller,
+    expectedReference: reference,
+  });
+
+  assert.equal(verified.payer, payer);
+  assert.equal(verified.endpoint, "/api/premium/quote");
+  assert.equal(verified.amountAtomic, BigInt(1000));
+  assert.equal(verified.settlementReference, reference);
+});
+
+test("independent payment proof rejects mismatches and unsafe amounts", () => {
+  const payer = "0x1111111111111111111111111111111111111111";
+  const other = "0x3333333333333333333333333333333333333333";
+  const seller = "0x2222222222222222222222222222222222222222";
+
+  assert.throws(
+    () => verifyExternalPaymentProof({
+      body: externalProofFixture({ payer, seller }),
+      expectedPayer: other,
+      expectedPayTo: seller,
+    }),
+    /does not match/,
+  );
+
+  const wrongNetwork = externalProofFixture({ payer, seller });
+  wrongNetwork.payment.network = "eip155:84532";
+  assert.throws(
+    () => verifyExternalPaymentProof({ body: wrongNetwork, expectedPayer: payer }),
+    /not an Arc Testnet payment/,
+  );
+
+  const oversized = externalProofFixture({ payer, seller, amount: "100001" });
+  assert.throws(
+    () => verifyExternalPaymentProof({ body: oversized, expectedPayer: payer }),
+    /exceeds the 0\.1 USDC verification cap/,
+  );
+});
+
+test("payment proof URLs are same-origin reference endpoints", () => {
+  const base = new URL("https://crux.example");
+  assert.equal(
+    proofReferenceFromUrl(
+      new URL("https://crux.example/api/payments/by-reference/gateway-ref"),
+      base,
+    ),
+    "gateway-ref",
+  );
+  assert.throws(
+    () => proofReferenceFromUrl(
+      new URL("https://attacker.example/api/payments/by-reference/gateway-ref"),
+      base,
+    ),
+    /configured Crux origin/,
+  );
+  assert.throws(
+    () => proofReferenceFromUrl(
+      new URL("https://crux.example/api/payments/by-reference/one/two"),
+      base,
+    ),
+    /invalid settlement reference/,
+  );
+});
+
 test("unknown payers remain unattributed unless evidence identifies them", () => {
   const sets = {
     houseAddresses: new Set(["0xhouse"]),
@@ -153,6 +279,41 @@ test("visitor readiness requires gas only while a Gateway deposit is needed", ()
     visitorWalletReadiness({ walletUsdc: 0, gatewayUsdc: 0.03, nativeGasAtomic: null }).funded,
     true,
   );
+});
+
+test("release readiness mirrors the agent's exact Gateway deposit threshold", () => {
+  assert.deepEqual(gatewayFundingPlan(0.05), {
+    requiredGatewayAtomic: BigInt(60_000),
+    depositAtomic: BigInt(1_000_000),
+    depositUsdc: "1.000000",
+  });
+  const prefunded = gatewayRunReadiness({
+    budgetUsdc: 0.05,
+    walletUsdcAtomic: BigInt(0),
+    gatewayAvailableAtomic: BigInt(60_000),
+    nativeGasAtomic: BigInt(0),
+  });
+  assert.equal(prefunded.ready, true);
+  assert.equal(prefunded.needsDeposit, false);
+
+  const depositReady = gatewayRunReadiness({
+    budgetUsdc: 0.05,
+    walletUsdcAtomic: BigInt(1_000_000),
+    gatewayAvailableAtomic: BigInt(59_999),
+    nativeGasAtomic: BigInt(1),
+  });
+  assert.equal(depositReady.ready, true);
+  assert.equal(depositReady.needsDeposit, true);
+  assert.equal(depositReady.depositAtomic, BigInt(1_000_000));
+
+  const blocked = gatewayRunReadiness({
+    budgetUsdc: 0.05,
+    walletUsdcAtomic: BigInt(999_999),
+    gatewayAvailableAtomic: BigInt(0),
+    nativeGasAtomic: BigInt(0),
+  });
+  assert.equal(blocked.ready, false);
+  assert.equal(blocked.reasons.length, 2);
 });
 
 test("deployment SHA matching accepts full and short equivalents only", () => {
@@ -199,4 +360,45 @@ function withEnv(values: Record<string, string | undefined>, run: () => void) {
       else process.env[name] = value;
     }
   }
+}
+
+function externalProofFixture(input: {
+  payer: string;
+  seller: string;
+  reference?: string;
+  amount?: string;
+}) {
+  const reference = input.reference ?? "gateway-reference";
+  const amount = input.amount ?? "1000";
+  return {
+    payment: {
+      endpoint: "/api/premium/quote",
+      payer: input.payer,
+      amountAtomic: amount,
+      network: "eip155:5042002",
+      settlementReference: reference,
+      facilitatorRequirements: {
+        scheme: "exact",
+        network: "eip155:5042002",
+        asset: "0x3600000000000000000000000000000000000000",
+        amount,
+        payTo: input.seller,
+        extra: {
+          name: "GatewayWalletBatched",
+          version: "1",
+          verifyingContract: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
+        },
+      },
+      facilitatorVerify: {
+        isValid: true,
+        payer: input.payer,
+      },
+      facilitatorSettle: {
+        success: true,
+        payer: input.payer,
+        transaction: reference,
+        network: "eip155:5042002",
+      },
+    },
+  };
 }

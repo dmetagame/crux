@@ -197,6 +197,7 @@ function scalarText(value: unknown, maxLength: number) {
 }
 
 function finiteNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
   const number = typeof value === "number" ? value : Number(value);
   return Number.isFinite(number) ? number : null;
 }

@@ -130,8 +130,9 @@ export async function POST(req: Request) {
           details: { route: "agent:baseline", topic, strategy, budget, spentUsdc },
           dedupeKey: `agent-run-failed:agent:baseline:${strategy}`,
         });
+        let failedReceiptId: string | null = null;
         try {
-          await failRunReceipt(
+          failedReceiptId = await failRunReceipt(
             run.id,
             {
               mode: "benchmark",
@@ -147,7 +148,15 @@ export async function POST(req: Request) {
         } catch (receiptErr) {
           console.error("[receipt] baseline fail update failed:", alertErrorMessage(receiptErr));
         }
-        send({ type: "error", message });
+        send({
+          type: "error",
+          message,
+          receiptId: failedReceiptId,
+          receiptUrl: failedReceiptId
+            ? new URL(`/runs/${failedReceiptId}`, baseUrl).toString()
+            : null,
+          paidEvidenceRetained: spentUsdc > 0,
+        });
       } finally {
         await guard.release();
         close();

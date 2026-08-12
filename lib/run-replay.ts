@@ -36,6 +36,7 @@ export function replayRunReceipt(receipt: RunReceipt, origin: string) {
         receiptId: receipt.id,
         receiptUrl,
         statusUrl,
+        paidEvidenceRetained: (receipt.spentUsdc ?? 0) > 0,
         replayed: true,
       },
     };

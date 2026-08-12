@@ -160,6 +160,11 @@ Without a key, production returns:
 Send `Idempotency-Key` on runner requests. Retrying the same key for the same
 caller replays the existing run instead of spending twice.
 
+If a model provider fails after one or more sources settle, the terminal error
+includes `receiptId`, `receiptUrl`, and `paidEvidenceRetained: true`. Inspect that
+failed receipt for the purchase decisions and Circle facilitator proof. Crux
+does not automatically retry a paid run because doing so could duplicate spend.
+
 Completed runs return `receiptUrl`. Receipts include budget, purchases, rationales,
 result, and Circle facilitator evidence metadata.
 

@@ -1,4 +1,5 @@
 import { runResearchAgent } from "@/lib/agent";
+import { agentFailureDetails } from "@/lib/agent-failure";
 import { spendAfterAgentEvent } from "@/lib/agent-event-spend";
 import { benchmarkAgentRequest, parseAgentBody } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
@@ -164,12 +165,14 @@ export async function POST(req: Request) {
           receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, baseUrl).toString() : null,
         });
       } catch (err) {
-        const message = alertErrorMessage(err);
+        const internalMessage = alertErrorMessage(err);
+        const failure = agentFailureDetails(err, spentUsdc);
+        const message = failure.publicMessage;
         void sendOperationalAlert({
           event: "agent_run_failed",
           severity: "warning",
           title: "Benchmark agent run failed",
-          summary: message,
+          summary: internalMessage,
           details: {
             route: "agent:run",
             runId: run.id,
@@ -177,11 +180,13 @@ export async function POST(req: Request) {
             model,
             budget,
             spentUsdc,
+            failureKind: failure.kind,
           },
           dedupeKey: `agent-run-failed:agent:run:${model}`,
         });
+        let failedReceiptId: string | null = null;
         try {
-          await failRunReceipt(
+          failedReceiptId = await failRunReceipt(
             run.id,
             {
               mode: "benchmark",
@@ -190,7 +195,17 @@ export async function POST(req: Request) {
               budgetUsdc: budget,
               spentUsdc,
               payerKind,
-              payload: { status: "failed", events, seed, budget, error: message },
+              payload: {
+                status: "failed",
+                events,
+                seed,
+                budget,
+                error: message,
+                failure: {
+                  kind: failure.kind,
+                  paidEvidenceRetained: failure.paidEvidenceRetained,
+                },
+              },
             },
             message,
           );
@@ -211,7 +226,15 @@ export async function POST(req: Request) {
             dedupeKey: `agent-receipt-fail-update-failed:agent:run:${model}`,
           });
         }
-        send({ type: "error", message });
+        send({
+          type: "error",
+          message,
+          receiptId: failedReceiptId,
+          receiptUrl: failedReceiptId
+            ? new URL(`/runs/${failedReceiptId}`, baseUrl).toString()
+            : null,
+          paidEvidenceRetained: failure.paidEvidenceRetained,
+        });
       } finally {
         await guard.release();
         close();

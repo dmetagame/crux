@@ -1,4 +1,9 @@
 import { runRealResearchAgent } from "@/lib/real-agent";
+import {
+  agentFailureDetails,
+  isVisitorWalletFundingFailure,
+  walletFundingFailure,
+} from "@/lib/agent-failure";
 import { spendAfterAgentEvent } from "@/lib/agent-event-spend";
 import { parseAgentBody, realAgentRequest } from "@/lib/agent-request";
 import { alertErrorMessage, sendOperationalAlert } from "@/lib/alerts";
@@ -186,22 +191,21 @@ export async function POST(req: Request) {
           receiptUrl: receiptId ? new URL(`/runs/${receiptId}`, baseUrl).toString() : null,
         });
       } catch (err) {
-        let message = alertErrorMessage(err);
-        let expectedFundingIssue = false;
+        const internalMessage = alertErrorMessage(err);
+        let failure = agentFailureDetails(err, spentUsdc);
         // The first run from a user wallet deposits into the Gateway, which fails
         // if the visitor hasn't faucet'd yet — turn that into a clear instruction.
-        if (walletId && /insufficient|balance|deposit|funds|gas/i.test(message)) {
-          expectedFundingIssue = true;
-          message =
-            "This wallet isn't funded yet. Send it 20 USDC + native gas at " +
-            "faucet.circle.com (Arc testnet), wait for it to land, then run again.";
+        if (walletId && isVisitorWalletFundingFailure(err)) {
+          failure = walletFundingFailure(spentUsdc);
         }
+        const message = failure.publicMessage;
+        const expectedFundingIssue = failure.kind === "wallet-funding";
         if (!expectedFundingIssue) {
           void sendOperationalAlert({
             event: "agent_run_failed",
             severity: "warning",
             title: "Real agent run failed",
-            summary: message,
+            summary: internalMessage,
             details: {
               route: "agent:real",
               runId: run.id,
@@ -210,12 +214,14 @@ export async function POST(req: Request) {
               budget,
               spentUsdc,
               payerKind,
+              failureKind: failure.kind,
             },
             dedupeKey: `agent-run-failed:agent:real:${payerKind}:${model}`,
           });
         }
+        let failedReceiptId: string | null = null;
         try {
-          await failRunReceipt(
+          failedReceiptId = await failRunReceipt(
             run.id,
             {
               mode: "real",
@@ -230,6 +236,10 @@ export async function POST(req: Request) {
                 budget,
                 walletId: walletId ? "visitor-wallet" : null,
                 error: message,
+                failure: {
+                  kind: failure.kind,
+                  paidEvidenceRetained: failure.paidEvidenceRetained,
+                },
               },
             },
             message,
@@ -252,7 +262,15 @@ export async function POST(req: Request) {
             dedupeKey: `agent-receipt-fail-update-failed:agent:real:${payerKind}:${model}`,
           });
         }
-        send({ type: "error", message });
+        send({
+          type: "error",
+          message,
+          receiptId: failedReceiptId,
+          receiptUrl: failedReceiptId
+            ? new URL(`/runs/${failedReceiptId}`, baseUrl).toString()
+            : null,
+          paidEvidenceRetained: failure.paidEvidenceRetained,
+        });
       } finally {
         await guard.release();
         close();

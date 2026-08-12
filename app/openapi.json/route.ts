@@ -290,6 +290,8 @@ function runnerTool(
       "x-crux": {
         scope,
         contentType: "application/x-ndjson",
+        failureReceipt:
+          "If a provider fails after payment, the terminal error includes receiptId, receiptUrl, and paidEvidenceRetained. Crux does not automatically retry paid runs.",
         publicHouseWalletRunsEnabled,
         idempotency:
           "Required on every paid runner request. If a replay returns running/409, poll /api/runs/{receiptId}.",

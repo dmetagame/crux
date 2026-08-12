@@ -17,6 +17,7 @@ import {
   agentGatewayProviderOptions,
   modelsUsedFromSteps,
 } from "./agent-models.ts";
+import { gatewayFundingPlan } from "./release-readiness.ts";
 
 export interface LedgerEntry {
   n: number;
@@ -77,8 +78,9 @@ export async function ensureGatewayFunded(
   budget: number,
 ): Promise<void> {
   const bal = await gateway.getBalances();
-  if (bal.gateway.available < BigInt(Math.ceil(budget * 1.2 * 1e6))) {
-    await gateway.deposit(Math.max(1, budget * 2).toFixed(6));
+  const plan = gatewayFundingPlan(budget);
+  if (bal.gateway.available < plan.requiredGatewayAtomic) {
+    await gateway.deposit(plan.depositUsdc);
   }
 }
 

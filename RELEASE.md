@@ -17,12 +17,23 @@ release.
    ```bash
    npm run verify:migrations
    ```
-4. Run `npm run check:fuel` with the production wallet environment loaded and
-   confirm the house wallet has native Arc gas plus enough Gateway-available
-   USDC for the planned judge runs.
-5. Confirm the Vercel AI Gateway account has paid credits. Free-tier capacity
-   can allow a one-token probe but still rate-limit a multi-step tool loop, and
-   model fallback cannot bypass an account-wide Gateway limit.
+4. Run the strict release preflight with production wallet and AI Gateway
+   credentials loaded:
+   ```bash
+   npm run check:release
+   ```
+   It exits nonzero for core blockers, checks the production API and x402
+   challenge, models the exact automatic Gateway-deposit threshold, and
+   performs a bounded no-payment tool loop through the real model/fallback
+   route. External-payer proof and seller withdrawal gas are warnings because
+   neither blocks the core RFB-01
+   product. `--skip-ai` is available only for non-agent infrastructure releases.
+   A free-tier AI route can pass once and rate-limit the next call; treat any
+   failure as a real judging-window blocker and add paid Gateway credits rather
+   than weakening the check.
+5. A minimal AI probe cannot guarantee a complete multi-step tool loop. Before
+   a live judging window, also run one capped operator/trusted-agent journey and
+   inspect its durable receipt.
 
 ## Database Release Step
 
@@ -88,6 +99,36 @@ npx vercel@latest logs crux-khaki.vercel.app --scope dmetagames-projects --since
 
 The release is complete only when the smoke check passes and there are no new
 unexpected warnings.
+
+## External Proof Drills
+
+Verify a third party's direct x402 payment before adding it to the explicit
+production allowlist:
+
+```bash
+npm run verify:external-payment -- \
+  --payer 0xIndependentPayer \
+  --proof https://crux-khaki.vercel.app/api/payments/by-reference/reference \
+  --attest-independent
+```
+
+The command verifies Circle facilitator evidence, Arc network, Crux endpoint,
+amount cap, current seller, and that the payer is not a Crux house, seller, or
+hosted visitor wallet. The explicit attestation records the remaining social
+fact that code cannot prove: a genuinely separate person or project controls
+the payer. The command never edits Vercel or attributes an address itself.
+
+Check the visitor judge path without spending:
+
+```bash
+chmod 600 /tmp/crux-visitor-proof.json
+npm run verify:visitor -- --credentials /tmp/crux-visitor-proof.json
+```
+
+Only add `--execute` when intentionally running one capped paid production
+journey. If the AI provider fails after a purchase, the command verifies and
+prints the retained failed-run receipt instead of retrying and risking duplicate
+spend.
 
 ## Secret Changes
 
