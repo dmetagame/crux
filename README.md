@@ -99,8 +99,8 @@ scoped Crux agent key.
 ```
 
 - **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop routed through the
-  **Vercel AI Gateway**. Haiku 4.5 is the proven primary, with Gemini 2.5 Flash
-  Lite and GPT OSS 20B as in-loop Gateway fallbacks. An independently metered,
+  **Vercel AI Gateway**. Haiku 4.5 is the proven primary, with Gemini 3.5 Flash
+  and GPT OSS 20B as in-loop Gateway fallbacks. An independently metered,
   optional direct Gemini route can restart only when Gateway fails before any
   purchase attempt. It never resumes or retries a partially paid run. Receipts
   record the actual model and inference route used.

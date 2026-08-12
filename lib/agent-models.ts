@@ -1,5 +1,5 @@
 const DEFAULT_FALLBACK_MODELS = [
-  "google/gemini-2.5-flash-lite",
+  "google/gemini-3.5-flash",
   "openai/gpt-oss-20b",
 ];
 

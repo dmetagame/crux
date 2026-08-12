@@ -75,20 +75,22 @@ export function isAiCapacityFailure(error: unknown) {
 }
 
 export function isAiProviderAvailabilityFailure(error: unknown) {
+  const record = recordValue(error);
+  if (text(record?.name) === "AgentInferenceFallbackError") return true;
   if (isAiCapacityFailure(error)) return true;
 
-  const record = recordValue(error);
   const status = finiteNumber(record?.statusCode) ?? finiteNumber(record?.status);
   const combined = aiProviderErrorText(error);
   const availabilitySignal =
     status === 401 ||
     status === 403 ||
+    status === 404 ||
     status === 408 ||
     status === 409 ||
     status === 425 ||
     status === 429 ||
     (status !== null && status >= 500) ||
-    /timed? out|timeout|connection (?:reset|refused|failed)|fetch failed|network error|service unavailable|temporarily unavailable|api key|credential|unauthori[sz]ed|forbidden/i.test(
+    /timed? out|timeout|connection (?:reset|refused|failed)|fetch failed|network error|service unavailable|temporarily unavailable|no longer available|not available to new users|model (?:is )?(?:not found|unsupported|deprecated|retired)|api key|credential|unauthori[sz]ed|forbidden/i.test(
       combined,
     );
 

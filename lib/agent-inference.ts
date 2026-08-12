@@ -30,7 +30,7 @@ interface RunAgentInferenceOptions<T> {
   resetBeforeFallback?: () => void;
 }
 
-const DEFAULT_DIRECT_GEMINI_MODEL = "gemini-2.5-flash-lite";
+const DEFAULT_DIRECT_GEMINI_MODEL = "gemini-3.5-flash";
 const DIRECT_GEMINI_PREFIX = "google-direct/";
 
 export async function runAgentInferenceWithFallback<T>(
@@ -61,7 +61,10 @@ export async function runAgentInferenceWithFallback<T>(
         fallbackFrom: options.primaryModel,
       };
     } catch (fallbackError) {
-      throw combinedFallbackError(fallbackError);
+      if (isAiProviderAvailabilityFailure(fallbackError)) {
+        throw combinedFallbackError(fallbackError);
+      }
+      throw fallbackError;
     }
   }
 }

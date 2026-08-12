@@ -37,10 +37,10 @@ import { addressFromPrivateKey, getHistoricalHouseAddresses, getHouseAddress } f
 test("Gateway fallback order excludes the requested primary and duplicates", () => {
   withEnv({
     CRUX_AGENT_MODEL_FALLBACKS:
-      "anthropic/claude-haiku-4.5, google/gemini-2.5-flash-lite, google/gemini-2.5-flash-lite, openai/gpt-oss-20b",
+      "anthropic/claude-haiku-4.5, google/gemini-3.5-flash, google/gemini-3.5-flash, openai/gpt-oss-20b",
   }, () => {
     assert.deepEqual(agentFallbackModels("anthropic/claude-haiku-4.5"), [
-      "google/gemini-2.5-flash-lite",
+      "google/gemini-3.5-flash",
       "openai/gpt-oss-20b",
     ]);
   });
@@ -70,7 +70,7 @@ test("direct Gemini fallback is limited to provider failures before purchase att
     GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
     GEMINI_API_KEY: undefined,
     CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
-    CRUX_DIRECT_GEMINI_MODEL: "gemini-2.5-flash-lite",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
   }, async () => {
     const capacityError = Object.assign(new Error("AI Gateway free tier rate limit"), {
       name: "AI_APICallError",
@@ -95,8 +95,38 @@ test("direct Gemini fallback is limited to provider failures before purchase att
     assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
     assert.equal(result.fallbackFrom, "anthropic/claude-haiku-4.5");
     assert.deepEqual(modelsUsedForInference([], result.attempt), [
-      "google-direct/gemini-2.5-flash-lite",
+      "google-direct/gemini-3.5-flash",
     ]);
+  });
+});
+
+test("direct Gemini agent errors are not mislabeled as provider outages", async () => {
+  await withEnvAsync({
+    GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+    GEMINI_API_KEY: undefined,
+    CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
+  }, async () => {
+    const capacityError = Object.assign(new Error("AI Gateway service unavailable"), {
+      name: "AI_APICallError",
+      statusCode: 503,
+    });
+    const validationError = new Error("submit_brief validation failed");
+    const attempts: string[] = [];
+
+    await assert.rejects(
+      () => runAgentInferenceWithFallback({
+        primaryModel: "anthropic/claude-haiku-4.5",
+        purchaseAttempted: () => false,
+        run: async (attempt) => {
+          attempts.push(attempt.route);
+          if (attempt.route === "ai-gateway") throw capacityError;
+          throw validationError;
+        },
+      }),
+      (error) => error === validationError,
+    );
+    assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
   });
 });
 
@@ -119,6 +149,18 @@ test("provider availability classification covers Gateway and direct Gemini outa
   assert.equal(publicFailure.kind, "ai-capacity");
   assert.match(publicFailure.publicMessage, /configured model providers/);
   assert.doesNotMatch(publicFailure.publicMessage, /API key/i);
+
+  const retiredModel = Object.assign(
+    new Error(
+      "AI Gateway failed before any source payment, and the direct Gemini fallback also failed: " +
+      "This model models/gemini-2.5-flash-lite is no longer available to new users.",
+    ),
+    { name: "AgentInferenceFallbackError" },
+  );
+  const retiredFailure = agentFailureDetails(retiredModel, 0);
+  assert.equal(retiredFailure.kind, "ai-capacity");
+  assert.match(retiredFailure.publicMessage, /temporarily unavailable/);
+  assert.doesNotMatch(retiredFailure.publicMessage, /gemini-2\.5|no longer available/i);
 });
 
 test("direct Gemini never restarts a run after a purchase attempt", async () => {
@@ -176,7 +218,7 @@ test("actual model IDs are read from Gateway response bodies", () => {
       model: { modelId: "anthropic/claude-haiku-4.5" },
       response: {
         modelId: "anthropic/claude-haiku-4.5",
-        body: { response: { modelId: "google/gemini-2.5-flash-lite" } },
+        body: { response: { modelId: "google/gemini-3.5-flash" } },
       },
     },
     {
@@ -184,7 +226,7 @@ test("actual model IDs are read from Gateway response bodies", () => {
     },
   ], "anthropic/claude-haiku-4.5");
 
-  assert.deepEqual(models, ["google/gemini-2.5-flash-lite", "openai/gpt-oss-20b"]);
+  assert.deepEqual(models, ["google/gemini-3.5-flash", "openai/gpt-oss-20b"]);
 });
 
 test("external source content is bounded and explicitly untrusted", () => {
