@@ -32,6 +32,7 @@
     "wallets:encrypt": "node --experimental-transform-types --no-warnings --env-file=.env.local scripts/encrypt-user-wallets.mts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.83",
     "@circle-fin/x402-batching": "^2.0.4",
     "@langchain/core": "^1.1.32",
     "@langchain/openai": "^1.2.13",

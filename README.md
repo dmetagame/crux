@@ -85,7 +85,8 @@ scoped Crux agent key.
 ## Architecture
 
 ```
-  research agent  ──(Vercel AI SDK + AI Gateway)──►  LLM reasoning
+  research agent  ──(Vercel AI SDK)───────────────►  LLM reasoning
+        │          Haiku via AI Gateway; direct Gemini only before any purchase
         │  tools: list_marketplace · preview · purchase · check_budget · submit_brief
         ▼
   marketplace (x402-protected Next.js routes)
@@ -99,7 +100,10 @@ scoped Crux agent key.
 
 - **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop routed through the
   **Vercel AI Gateway**. Haiku 4.5 is the proven primary, with Gemini 2.5 Flash
-  Lite and GPT OSS 20B as in-loop fallbacks. Receipts record the actual model IDs used.
+  Lite and GPT OSS 20B as in-loop Gateway fallbacks. An independently metered,
+  optional direct Gemini route can restart only when Gateway fails before any
+  purchase attempt. It never resumes or retries a partially paid run. Receipts
+  record the actual model and inference route used.
 - **Marketplace** (`lib/marketplace.ts`): the decision space — 9 sources with
   varied price/quality/reliability, free previews, the trap, and a misleading
   rumor. Reliability is deterministic under a seed, so runs are reproducible.
@@ -140,7 +144,8 @@ different rail (Coinbase facilitator) from the Circle Gateway batching on Arc.
 ### Prerequisites
 - Node.js v22+
 - A cloud [Supabase](https://supabase.com) project (free) — the seller's payment ledger
-- A [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) API key — routes the agent's LLM calls
+- A [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) API key — routes the proven primary model
+- Optional: a [Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key) key for an independent pre-payment fallback
 
 ### Setup
 ```bash
@@ -155,7 +160,14 @@ NEXT_PUBLIC_SUPABASE_URL=...            # your Supabase project URL + keys
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 AI_GATEWAY_API_KEY=...                  # Vercel AI Gateway
+GOOGLE_GENERATIVE_AI_API_KEY=...        # optional direct Gemini fallback
 ```
+Enable the direct Gemini fallback explicitly with
+`CRUX_DIRECT_GEMINI_FALLBACK_ENABLED=true`. It is attempted only for provider
+availability, quota, credential, or timeout failures before the agent starts
+any x402 purchase. Google states that free-tier request content may be used to
+improve its products, so do not send confidential research subjects through the
+free tier.
 Generated wallet env names are testnet-scoped:
 ```
 CRUX_KEY_SCOPE=arc-testnet
@@ -251,7 +263,9 @@ npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
-Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`, `TOPIC`, `BUDGET`, `SEED`, `BASE_URL`.
+Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`,
+`CRUX_DIRECT_GEMINI_MODEL`, `CRUX_DIRECT_GEMINI_FALLBACK_ENABLED`, `TOPIC`,
+`BUDGET`, `SEED`, `BASE_URL`.
 
 For production deploys, use [RELEASE.md](./RELEASE.md) so Vercel deploys,
 Supabase migrations, smoke checks, and short-lived secrets are tracked together.

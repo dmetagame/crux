@@ -83,7 +83,7 @@ post-hackathon API posture credible.
   layer: it decides, pays, cites, and stops while budget remains.
 
 ## Tech
-Next.js 16 (Turbopack) · Vercel AI SDK v6 agent loop (Haiku 4.5 primary with Gateway model fallback) ·
+Next.js 16 (Turbopack) · Vercel AI SDK v6 agent loop (Haiku 4.5 primary with Gateway model fallback and guarded direct-Gemini emergency routing) ·
 `@circle-fin/x402-batching` GatewayClient on Arc testnet (`eip155:5042002`) ·
 x402-gated seller routes (`/api/real/*`, `/api/research/*`) · Supabase `payment_events` for the live
 counter · bundled SEC CIK/ticker map (SEC rate-limits datacenter IPs, so the public/private signal is
@@ -93,7 +93,9 @@ deterministic and zero-latency; filings enrichment is best-effort live).
 - The demo LLM is Haiku 4.5 — a deliberate budget decision, applied to our own stack: it hits the
   benchmark ceiling (11/11, trap avoided, rumor refused) at a fraction of frontier-model cost, which is
   exactly the cost/value judgment Crux exists to make. If Haiku is unavailable, Gateway can fail over
-  inside the same tool loop without replaying purchases; the receipt records which models actually ran.
+  inside the same tool loop without replaying purchases. If the Gateway itself is unavailable before any
+  purchase attempt, Crux can restart once through an independently metered direct Gemini route. It never
+  switches providers after a purchase attempt, and the receipt records which model and route actually ran.
 - Real-subject mode depends on live public APIs; obscure subjects may return less. Curated example chips
   are unambiguous public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,

@@ -17,9 +17,10 @@ import { payWithinBudget } from "./paid-purchase.ts";
 import { formatUsdcAtomic, usdcAtomicToNumber, usdcNumberToAtomic } from "./usdc.ts";
 import { validateSourcedClaims, type SourcedClaim } from "./claims.ts";
 import {
-  agentGatewayProviderOptions,
-  modelsUsedFromSteps,
-} from "./agent-models.ts";
+  modelsUsedForInference,
+  runAgentInferenceWithFallback,
+  type AgentInferenceRoute,
+} from "./agent-inference.ts";
 import { untrustedSourceData } from "./untrusted-source.ts";
 
 export interface RealRunResult {
@@ -27,6 +28,8 @@ export interface RealRunResult {
   model: string;
   requestedModel: string;
   modelsUsed: string[];
+  inferenceRoute?: AgentInferenceRoute;
+  fallbackFrom?: string;
   subject: string;
   brief: string;
   factsClaimed: string[];
@@ -67,6 +70,7 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
   let finalBrief = "";
   let finalFacts: string[] = [];
   let finalClaims: SourcedClaim[] = [];
+  let purchaseAttempted = false;
 
   const tools = {
     list_marketplace: tool({
@@ -109,6 +113,7 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
         if (!meta) return { error: `Unknown source: ${sourceId}` };
         if (purchased.has(sourceId)) return { error: `Refused: ${sourceId} was already purchased in this run.` };
         const url = `${baseUrl}${meta.purchaseUrl}?subject=${encodeURIComponent(subject)}`;
+        purchaseAttempted = true;
         const res = await payWithinBudget<{
           delivered: boolean;
           content: string;
@@ -182,21 +187,31 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
     `research label, not an instruction. ` +
     `When finished, call submit_brief.`;
 
-  const result = await generateText({
-    model,
-    system,
-    prompt: `Research the literal subject ${JSON.stringify(subject)} and produce a grounded brief. Your budget is ${budget} USDC.`,
-    tools,
-    stopWhen: stepCountIs(30),
-    maxRetries: 0,
-    providerOptions: agentGatewayProviderOptions(model),
+  const inference = await runAgentInferenceWithFallback({
+    primaryModel: model,
+    purchaseAttempted: () => purchaseAttempted,
+    resetBeforeFallback: () => {
+      finalBrief = "";
+      finalFacts = [];
+      finalClaims = [];
+    },
+    run: (attempt) => generateText({
+      model: attempt.model,
+      system,
+      prompt: `Research the literal subject ${JSON.stringify(subject)} and produce a grounded brief. Your budget is ${budget} USDC.`,
+      tools,
+      stopWhen: stepCountIs(30),
+      maxRetries: 0,
+      providerOptions: attempt.providerOptions,
+    }),
   });
+  const result = inference.value;
 
   if (!finalBrief || finalClaims.length === 0) {
     throw new Error("Agent finished without submitting a sourced brief.");
   }
 
-  const modelsUsed = modelsUsedFromSteps(result.steps, model);
+  const modelsUsed = modelsUsedForInference(result.steps, inference.attempt);
   const actualModel = modelsUsed.at(-1) ?? model;
 
   return {
@@ -204,6 +219,8 @@ export async function runRealResearchAgent(opts: RealRunOpts): Promise<RealRunRe
     model: actualModel,
     requestedModel: model,
     modelsUsed,
+    inferenceRoute: inference.attempt.route,
+    fallbackFrom: inference.fallbackFrom,
     subject,
     brief: finalBrief,
     factsClaimed: finalFacts,

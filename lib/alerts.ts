@@ -111,6 +111,9 @@ function sanitizeDetails(details: Record<string, unknown>) {
 function redact(value: string) {
   return value
     .replace(/0x[a-fA-F0-9]{64}/g, "0x[redacted-private-key]")
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted-google-api-key]")
+    .replace(/\bAQ\.[0-9A-Za-z_-]{20,}\b/g, "[redacted-google-api-key]")
+    .replace(/([?&](?:key|api_key)=)[^&\s]+/gi, "$1[redacted]")
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
     .replace(/[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, "[redacted-token]")
     .slice(0, 1000);

@@ -3,9 +3,10 @@ import { GatewayClient } from "@circle-fin/x402-batching/client";
 import { createPublicClient, erc20Abi, formatEther, formatUnits, http } from "viem";
 import { z } from "zod";
 import {
-  agentGatewayProviderOptions,
-  modelsUsedFromSteps,
-} from "../lib/agent-models.ts";
+  hasDirectGeminiFallback,
+  modelsUsedForInference,
+  runAgentInferenceWithFallback,
+} from "../lib/agent-inference.ts";
 import { gatewayRunReadiness } from "../lib/release-readiness.ts";
 import {
   addressFromPrivateKey,
@@ -125,8 +126,11 @@ async function checkAi() {
     warn("AI Gateway", "capacity probe explicitly skipped");
     return;
   }
-  if (!process.env.AI_GATEWAY_API_KEY?.trim() && !process.env.VERCEL_OIDC_TOKEN?.trim()) {
-    block("AI Gateway", "no local AI Gateway credential is available for the release probe");
+  const hasGatewayCredential = Boolean(
+    process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim(),
+  );
+  if (!hasGatewayCredential && !hasDirectGeminiFallback()) {
+    block("AI inference", "no AI Gateway credential or direct Gemini fallback key is available for the release probe");
     return;
   }
 
@@ -134,33 +138,41 @@ async function checkAi() {
   const timeoutMs = positiveInteger(process.env.CRUX_PREFLIGHT_AI_TIMEOUT_MS, 50_000);
   let toolCalled = false;
   try {
-    const result = await generateText({
-      model,
-      prompt: "Call release_ready exactly once, then reply READY.",
-      tools: {
-        release_ready: tool({
-          description: "Confirms that the Crux agent tool loop is available.",
-          inputSchema: z.object({}),
-          execute: async () => {
-            toolCalled = true;
-            return { ready: true };
-          },
-        }),
+    const inference = await runAgentInferenceWithFallback({
+      primaryModel: model,
+      purchaseAttempted: () => false,
+      resetBeforeFallback: () => {
+        toolCalled = false;
       },
-      stopWhen: stepCountIs(2),
-      maxOutputTokens: 64,
-      maxRetries: 0,
-      abortSignal: AbortSignal.timeout(timeoutMs),
-      providerOptions: agentGatewayProviderOptions(model),
+      run: (attempt) => generateText({
+        model: attempt.model,
+        prompt: "Call release_ready exactly once, then reply READY.",
+        tools: {
+          release_ready: tool({
+            description: "Confirms that the Crux agent tool loop is available.",
+            inputSchema: z.object({}),
+            execute: async () => {
+              toolCalled = true;
+              return { ready: true };
+            },
+          }),
+        },
+        stopWhen: stepCountIs(2),
+        maxOutputTokens: 64,
+        maxRetries: 0,
+        abortSignal: AbortSignal.timeout(timeoutMs),
+        providerOptions: attempt.providerOptions,
+      }),
     });
+    const result = inference.value;
     if (!toolCalled) throw new Error("model did not execute the required tool call");
-    const models = modelsUsedFromSteps(result.steps, model);
+    const models = modelsUsedForInference(result.steps, inference.attempt);
     pass(
-      "AI Gateway",
-      `configured agent route completed a ${result.steps.length}-step tool loop (${models.join(", ")})`,
+      "AI inference",
+      `configured ${inference.attempt.route} route completed a ${result.steps.length}-step tool loop (${models.join(", ")})`,
     );
   } catch (error) {
-    block("AI Gateway", `capacity probe failed: ${safeError(error)}`);
+    block("AI inference", `capacity probe failed: ${safeError(error)}`);
   }
 }
 
@@ -241,6 +253,9 @@ function safeError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(/\u001b\[[0-9;]*m/g, "")
+    .replace(/\bAIza[0-9A-Za-z_-]{20,}\b/g, "[redacted-google-api-key]")
+    .replace(/\bAQ\.[0-9A-Za-z_-]{20,}\b/g, "[redacted-google-api-key]")
+    .replace(/([?&](?:key|api_key)=)[^&\s]+/gi, "$1[redacted]")
     .replace(/(?:sk|vck|sb_secret)_[A-Za-z0-9_-]+/g, "[redacted]")
     .slice(0, 300);
 }

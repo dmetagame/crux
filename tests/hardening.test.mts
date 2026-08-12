@@ -5,11 +5,18 @@ import {
   modelsUsedFromSteps,
 } from "../lib/agent-models.ts";
 import {
+  modelsUsedForInference,
+  runAgentInferenceWithFallback,
+  shouldUseDirectGeminiFallback,
+} from "../lib/agent-inference.ts";
+import {
   agentFailureDetails,
   isAiCapacityFailure,
+  isAiProviderAvailabilityFailure,
   isVisitorWalletFundingFailure,
 } from "../lib/agent-failure.ts";
 import { spendAfterAgentEvent } from "../lib/agent-event-spend.ts";
+import { alertErrorMessage } from "../lib/alerts.ts";
 import { gitShaMatches } from "../lib/deployment-version.ts";
 import {
   proofReferenceFromUrl,
@@ -56,6 +63,95 @@ test("AI capacity failures become safe public messages and retain paid evidence"
   assert.equal(afterSpend.paidEvidenceRetained, true);
   assert.match(afterSpend.publicMessage, /0\.012 USDC settled/);
   assert.match(afterSpend.publicMessage, /did not retry/);
+});
+
+test("direct Gemini fallback is limited to provider failures before purchase attempts", async () => {
+  await withEnvAsync({
+    GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+    GEMINI_API_KEY: undefined,
+    CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-2.5-flash-lite",
+  }, async () => {
+    const capacityError = Object.assign(new Error("AI Gateway free tier rate limit"), {
+      name: "AI_APICallError",
+      statusCode: 429,
+    });
+    assert.equal(shouldUseDirectGeminiFallback(capacityError, false), true);
+    assert.equal(shouldUseDirectGeminiFallback(capacityError, true), false);
+    assert.equal(shouldUseDirectGeminiFallback(new Error("claim validation failed"), false), false);
+
+    const attempts: string[] = [];
+    const result = await runAgentInferenceWithFallback({
+      primaryModel: "anthropic/claude-haiku-4.5",
+      purchaseAttempted: () => false,
+      run: async (attempt) => {
+        attempts.push(attempt.route);
+        if (attempt.route === "ai-gateway") throw capacityError;
+        return "ready";
+      },
+    });
+
+    assert.equal(result.value, "ready");
+    assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
+    assert.equal(result.fallbackFrom, "anthropic/claude-haiku-4.5");
+    assert.deepEqual(modelsUsedForInference([], result.attempt), [
+      "google-direct/gemini-2.5-flash-lite",
+    ]);
+  });
+});
+
+test("provider availability classification covers Gateway and direct Gemini outages", () => {
+  assert.equal(isAiProviderAvailabilityFailure(Object.assign(
+    new Error("AI Gateway service unavailable"),
+    { name: "AI_APICallError", statusCode: 503 },
+  )), true);
+  assert.equal(isAiProviderAvailabilityFailure(Object.assign(
+    new Error("Google Generative AI fetch failed"),
+    { name: "AI_APICallError" },
+  )), true);
+  assert.equal(isAiProviderAvailabilityFailure(new Error("source API fetch failed")), false);
+
+  const bothFailed = Object.assign(
+    new Error("AI Gateway failed before any source payment, and the direct Gemini fallback also failed: invalid API key"),
+    { name: "AgentInferenceFallbackError" },
+  );
+  const publicFailure = agentFailureDetails(bothFailed, 0);
+  assert.equal(publicFailure.kind, "ai-capacity");
+  assert.match(publicFailure.publicMessage, /configured model providers/);
+  assert.doesNotMatch(publicFailure.publicMessage, /API key/i);
+});
+
+test("direct Gemini never restarts a run after a purchase attempt", async () => {
+  await withEnvAsync({
+    GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+    CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
+  }, async () => {
+    const capacityError = Object.assign(new Error("AI Gateway returned 429"), {
+      name: "AI_APICallError",
+      statusCode: 429,
+    });
+    const attempts: string[] = [];
+
+    await assert.rejects(() => runAgentInferenceWithFallback({
+      primaryModel: "anthropic/claude-haiku-4.5",
+      purchaseAttempted: () => true,
+      run: async (attempt) => {
+        attempts.push(attempt.route);
+        throw capacityError;
+      },
+    }), /429/);
+    assert.deepEqual(attempts, ["ai-gateway"]);
+  });
+});
+
+test("operational errors redact direct Gemini API keys", () => {
+  for (const key of [`AIza${"a".repeat(35)}`, `AQ.${"b".repeat(48)}`]) {
+    const message = alertErrorMessage(
+      new Error(`Google request failed with ${key} at https://example.test/models?key=${key}`),
+    );
+    assert.doesNotMatch(message, new RegExp(key.replace(".", "\\.")));
+    assert.match(message, /redacted/);
+  }
 });
 
 test("wallet funding failures stay distinct from model capacity failures", () => {
@@ -354,6 +450,25 @@ function withEnv(values: Record<string, string | undefined>, run: () => void) {
       else process.env[name] = value;
     }
     run();
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}
+
+async function withEnvAsync(
+  values: Record<string, string | undefined>,
+  run: () => Promise<void>,
+) {
+  const previous = new Map(Object.keys(values).map((name) => [name, process.env[name]]));
+  try {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await run();
   } finally {
     for (const [name, value] of previous) {
       if (value === undefined) delete process.env[name];

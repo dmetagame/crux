@@ -16,13 +16,13 @@ export function agentFailureDetails(
   const message = errorMessage(error);
   const paidEvidenceRetained = spentUsdc > 0;
 
-  if (isAiCapacityFailure(error)) {
+  if (isAiProviderAvailabilityFailure(error)) {
     return {
       kind: "ai-capacity",
       paidEvidenceRetained,
       publicMessage: paidEvidenceRetained
         ? `The model provider became unavailable after ${formatUsdc(spentUsdc)} USDC settled. Crux preserved the paid source decisions and settlement evidence in this run's receipt; it did not retry and risk duplicate spend.`
-        : "The model provider is temporarily unavailable. No source payments were made; retry after AI Gateway capacity is restored.",
+        : "The configured model providers are temporarily unavailable. No source payments were made; retry shortly.",
     };
   }
 
@@ -46,7 +46,7 @@ export function walletFundingFailure(
 }
 
 export function isVisitorWalletFundingFailure(error: unknown) {
-  if (isAiCapacityFailure(error)) return false;
+  if (isAiProviderAvailabilityFailure(error)) return false;
   const record = recordValue(error);
   const combined = [
     record?.name,
@@ -64,21 +64,35 @@ export function isVisitorWalletFundingFailure(error: unknown) {
 export function isAiCapacityFailure(error: unknown) {
   const record = recordValue(error);
   const status = finiteNumber(record?.statusCode) ?? finiteNumber(record?.status);
-  const name = text(record?.name) ?? (error instanceof Error ? error.name : "");
-  const message = errorMessage(error);
-  const url = text(record?.url) ?? "";
-  const combined = `${name} ${message} ${url}`;
-  const aiProviderSignal =
-    /ai[_ -]?gateway|ai_apicallerror|gatewayinternalservererror|model provider|free tier/i.test(
-      combined,
-    );
+  const combined = aiProviderErrorText(error);
   const capacitySignal =
     status === 429 ||
     /\b429\b|rate limit|too many requests|quota|credits?|capacity|free tier|billing|payment required|insufficient (?:funds|balance)/i.test(
       combined,
     );
 
-  return aiProviderSignal && capacitySignal;
+  return hasAiProviderSignal(combined) && capacitySignal;
+}
+
+export function isAiProviderAvailabilityFailure(error: unknown) {
+  if (isAiCapacityFailure(error)) return true;
+
+  const record = recordValue(error);
+  const status = finiteNumber(record?.statusCode) ?? finiteNumber(record?.status);
+  const combined = aiProviderErrorText(error);
+  const availabilitySignal =
+    status === 401 ||
+    status === 403 ||
+    status === 408 ||
+    status === 409 ||
+    status === 425 ||
+    status === 429 ||
+    (status !== null && status >= 500) ||
+    /timed? out|timeout|connection (?:reset|refused|failed)|fetch failed|network error|service unavailable|temporarily unavailable|api key|credential|unauthori[sz]ed|forbidden/i.test(
+      combined,
+    );
+
+  return hasAiProviderSignal(combined) && availabilitySignal;
 }
 
 function errorMessage(error: unknown) {
@@ -86,6 +100,25 @@ function errorMessage(error: unknown) {
   if (typeof error === "string" && error.trim()) return error.trim();
   const record = recordValue(error);
   return text(record?.message) ?? "The agent run failed.";
+}
+
+function aiProviderErrorText(error: unknown) {
+  const record = recordValue(error);
+  const cause = recordValue(record?.cause);
+  return [
+    text(record?.name),
+    error instanceof Error ? error.name : null,
+    errorMessage(error),
+    text(record?.url),
+    text(cause?.name),
+    text(cause?.message),
+  ].filter(Boolean).join(" ");
+}
+
+function hasAiProviderSignal(combined: string) {
+  return /ai[_ -]?gateway|ai_apicallerror|ai_loadapikeyerror|gatewayinternalservererror|agentinferencefallbackerror|model provider|free tier|generativelanguage|google generative ai|gemini/i.test(
+    combined,
+  );
 }
 
 function formatUsdc(value: number) {
