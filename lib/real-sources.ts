@@ -17,6 +17,11 @@
  * as on a real paid API).
  */
 
+import {
+  evidenceMatchesSubject,
+  subjectMatchesCandidate,
+} from "./subject-relevance.ts";
+
 export interface RealSourceMeta {
   id: string;
   name: string;
@@ -84,8 +89,8 @@ export interface RealSourceResult {
 // SEC's fair-access policy requires a descriptive User-Agent with a contact; a
 // bare UA gets 403'd from datacenter IPs. Used for every outbound data call.
 const UA = "Crux-Research/1.0 (dmetagame@users.noreply.github.com)";
-const DEFAULT_SOURCE_CALL_TIMEOUT_MS = 15_000;
-const MAX_FETCH_ATTEMPT_MS = 7_000;
+const DEFAULT_SOURCE_CALL_TIMEOUT_MS = 6_000;
+const MAX_FETCH_ATTEMPT_MS = 3_000;
 
 type SourceFetchContext = {
   deadlineAt: number;
@@ -185,6 +190,14 @@ async function fetchWikipedia(subject: string, context: SourceFetchContext): Pro
     if (data?.type === "disambiguation" || !data?.extract) {
       return { ...base, delivered: false, content: `No clean Wikipedia article for "${subject}".`, citationUrl: null };
     }
+    if (!subjectMatchesCandidate(subject, String(data.title ?? ""))) {
+      return {
+        ...base,
+        delivered: false,
+        content: `Wikipedia's closest result, "${data.title}", does not match the literal subject "${subject}".`,
+        citationUrl: null,
+      };
+    }
     const url = data?.content_urls?.desktop?.page ?? null;
     const desc = data.description ? ` (${data.description})` : "";
     return {
@@ -217,6 +230,14 @@ async function fetchWikidata(subject: string, context: SourceFetchContext): Prom
     );
     const hit = search?.search?.[0];
     if (!hit) return { ...base, delivered: false, content: `No Wikidata entity for "${subject}".`, citationUrl: null };
+    if (!subjectMatchesCandidate(subject, String(hit.label ?? hit.match?.text ?? ""))) {
+      return {
+        ...base,
+        delivered: false,
+        content: `Wikidata's closest entity, "${hit.label ?? "unknown"}", does not match the literal subject "${subject}".`,
+        citationUrl: null,
+      };
+    }
 
     const ent = await fetchJson(
       `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${hit.id}&props=claims|descriptions|sitelinks&format=json`,
@@ -274,11 +295,12 @@ async function fetchEdgar(subject: string, context: SourceFetchContext): Promise
   try {
     const q = subject.trim().toLowerCase();
     const tickers = await loadTickers();
-    const match =
-      tickers.find((t) => t.ticker === q) ??
-      tickers.find((t) => t.title === q) ??
-      tickers.find((t) => t.title.includes(q) && q.length >= 4) ??
-      tickers.find((t) => q.includes(t.title) && t.title.length >= 4);
+    const tickerMatch = tickers.find((ticker) => ticker.ticker === q);
+    const exactTitleMatch = tickers.find((ticker) => ticker.title === q);
+    const candidateMatches = tickerMatch || exactTitleMatch
+      ? []
+      : tickers.filter((ticker) => subjectMatchesCandidate(subject, ticker.display));
+    const match = tickerMatch ?? exactTitleMatch ?? (candidateMatches.length === 1 ? candidateMatches[0] : null);
     if (!match) {
       return {
         ...base,
@@ -328,7 +350,9 @@ async function fetchNews(subject: string, context: SourceFetchContext): Promise<
       `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(subject)}&tags=story&hitsPerPage=5`,
       context,
     );
-    const hits = (data?.hits ?? []).filter((h: any) => h.title);
+    const hits = (data?.hits ?? []).filter(
+      (h: any) => h.title && evidenceMatchesSubject(subject, `${h.title} ${h.url ?? ""}`),
+    );
     if (!hits.length) return { ...base, delivered: false, content: `No Hacker News discussion mentions "${subject}".`, citationUrl: null };
     const lines = hits.map(
       (h: any) => `• "${h.title}" (${h.points ?? 0} pts, ${String(h.created_at).slice(0, 10)})`,

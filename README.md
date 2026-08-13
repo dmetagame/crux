@@ -85,9 +85,10 @@ scoped Crux agent key.
 ## Architecture
 
 ```
-  research agent  ──(Vercel AI SDK)───────────────►  LLM reasoning
+  spend planner   ──(Vercel AI SDK)───────────────►  immutable capped plan
         │          Haiku via AI Gateway; optional independent Gemini route
-        │  tools: list_marketplace · preview · purchase · check_budget · submit_brief
+        ▼
+  deterministic payment executor (max 2 x402 purchases, never replayed)
         ▼
   marketplace (x402-protected Next.js routes)
         │  GET 402 → sign EIP-3009 authorization → retry with payment
@@ -95,15 +96,25 @@ scoped Crux agent key.
   Circle Gateway  ──batches signed authorizations──►  single on-chain settlement on Arc
         │
         ▼
-  Supabase (payment ledger)        lib/score.ts (objective brief scorer)
+  no-payment evidence synthesis ──► cited brief / deterministic recovery
+        │
+        ▼
+  Supabase (payment ledger + receipts)   lib/score.ts (objective brief scorer)
 ```
 
-- **Agent** (`lib/agent.ts`): an AI-SDK tool-calling loop routed through the
+- **Agent** (`lib/agent.ts`, `lib/real-agent.ts`): benchmark research remains an
+  AI-SDK tool-calling loop. Real-subject research uses a stricter payment boundary:
+  one inference call creates an immutable, budget-normalized plan of at most two
+  sources; Crux executes those x402 purchases exactly once outside inference; then
+  a separate no-payment inference call synthesizes only the delivered evidence.
+  Synthesis can safely fail over because it has no payment tools. Source adapters
+  reject fuzzy results that do not match the literal subject, and no-evidence runs
+  make no factual claims. Both surfaces are routed through the
   **Vercel AI Gateway**. Haiku 4.5 is the proven primary, with Gemini 3.5 Flash
   and GPT OSS 20B as in-loop Gateway fallbacks. An independently metered,
   optional direct Gemini route can be enabled for visitor-funded runs and can
-  fail over to Gateway only before a purchase. It never resumes or retries a
-  partially paid tool loop. If inference disappears after settlement, Crux can
+  fail over to Gateway during either retry-safe inference phase. It never resumes
+  or retries a partially paid tool loop. If inference disappears after settlement, Crux can
   finish a clearly marked, limited brief deterministically from already paid
   evidence, with no tools and no additional payment. Receipts record the actual
   model, route, and recovery mode used.
@@ -167,8 +178,9 @@ GOOGLE_GENERATIVE_AI_API_KEY=...        # optional direct Gemini fallback
 ```
 Enable the direct Gemini route explicitly with
 `CRUX_DIRECT_GEMINI_FALLBACK_ENABLED=true`. Route switching is attempted only
-for provider availability, quota, credential, or timeout failures before the
-agent starts any x402 purchase. Visitor-funded runs remain Gateway-first until
+inside retry-safe inference phases: planning before any x402 purchase, and
+synthesis after settlement with no payment tools. The immutable payment executor
+itself is never replayed. Visitor-funded runs remain Gateway-first until
 `CRUX_VISITOR_DIRECT_GEMINI_PRIMARY_ENABLED=true` is set and redeployed after a
 successful production health check. The tested direct default is
 `gemini-3.1-flash-lite`; validate replacements with the protected

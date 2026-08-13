@@ -164,7 +164,7 @@ export async function POST(req: Request) {
             severity: "warning",
             title: "Real agent completed from paid evidence",
             summary:
-              "The inference provider failed after settlement; Crux completed without replaying the paid tool loop.",
+              "Evidence synthesis failed after settlement; Crux completed without replaying the paid tool loop.",
             details: {
               route: "agent:real",
               runId: run.id,
@@ -173,6 +173,7 @@ export async function POST(req: Request) {
               spentUsdc: result.spent,
               payerKind,
               recoveryKind: result.recovery.kind,
+              providerFailureKind: result.recovery.providerFailureKind,
               recoveredSourceIds: result.recovery.sourceIds,
             },
             dedupeKey: `agent-run-recovered:agent:real:${payerKind}:${model}`,

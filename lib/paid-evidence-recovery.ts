@@ -1,4 +1,6 @@
 import type { SourcedClaim } from "./claims.ts";
+import type { AiProviderFailureKind } from "./agent-failure.ts";
+import { evidenceMatchesSubject } from "./subject-relevance.ts";
 
 export interface PaidEvidenceSnapshot {
   sourceId: string;
@@ -9,9 +11,11 @@ export interface PaidEvidenceSnapshot {
 
 export interface PaidEvidenceRecoveryMetadata {
   kind: "deterministic-paid-evidence";
-  reason: "provider-unavailable-after-settlement";
+  reason: "provider-unavailable-after-settlement" | "inference-failed-after-settlement";
   degraded: true;
   noAdditionalPayments: true;
+  relevantEvidenceFound: boolean;
+  providerFailureKind: AiProviderFailureKind;
   sourceIds: string[];
 }
 
@@ -25,12 +29,35 @@ export interface PaidEvidenceRecoveryResult {
 export function buildPaidEvidenceRecovery(
   subject: string,
   evidence: PaidEvidenceSnapshot[],
+  providerFailureKind: AiProviderFailureKind = "unknown",
 ): PaidEvidenceRecoveryResult {
   const usable = evidence
-    .filter((item) => item.sourceId.trim() && item.content.trim())
+    .filter(
+      (item) => item.sourceId.trim()
+        && item.content.trim()
+        && evidenceMatchesSubject(subject, item.content),
+    )
     .slice(0, 8);
   if (usable.length === 0) {
-    throw new Error("Paid-evidence recovery requires at least one delivered source.");
+    const brief = [
+      `Recovery brief for ${subject}`,
+      "Evidence synthesis failed after a source payment settled. Crux did not restart the paid tool loop or make another source payment.",
+      "No delivered source contained evidence that matched the literal subject, so Crux makes no factual claim. The receipt retains every paid miss and settlement reference.",
+    ].join("\n\n");
+    return {
+      brief,
+      factsClaimed: [],
+      claims: [],
+      recovery: {
+        kind: "deterministic-paid-evidence",
+        reason: "inference-failed-after-settlement",
+        degraded: true,
+        noAdditionalPayments: true,
+        relevantEvidenceFound: false,
+        providerFailureKind,
+        sourceIds: [],
+      },
+    };
   }
 
   const claims = usable.map((item) => {
@@ -45,7 +72,7 @@ export function buildPaidEvidenceRecovery(
 
   const brief = [
     `Recovery brief for ${subject}`,
-    "The inference provider became unavailable after a source payment settled. Crux completed this limited brief only from evidence that had already been paid for and delivered. It did not restart the paid tool loop or make another source payment.",
+    "Evidence synthesis failed after a source payment settled. Crux completed this limited brief only from evidence that had already been paid for and delivered. It did not restart the paid tool loop or make another source payment.",
     ...claims.map((claim) => `• ${claim.text}`),
   ].join("\n\n");
 
@@ -55,9 +82,11 @@ export function buildPaidEvidenceRecovery(
     claims,
     recovery: {
       kind: "deterministic-paid-evidence",
-      reason: "provider-unavailable-after-settlement",
+      reason: "inference-failed-after-settlement",
       degraded: true,
       noAdditionalPayments: true,
+      relevantEvidenceFound: true,
+      providerFailureKind,
       sourceIds: usable.map((item) => item.sourceId),
     },
   };

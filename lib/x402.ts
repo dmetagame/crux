@@ -25,6 +25,7 @@ import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/ra
 import { buildSettlementProofColumns } from "@/lib/settlement-verifier";
 import { formatUsdcAtomic } from "@/lib/usdc";
 import { getSellerAddress } from "@/lib/wallet-keys";
+import { expectedPaymentAmountMismatch } from "@/lib/payment-quote";
 
 // Arc Testnet contract addresses (from @circle-fin/x402-batching SDK)
 const ARC_TESTNET_NETWORK = "eip155:5042002";
@@ -137,6 +138,16 @@ export function withGateway(
       );
     }
     const paymentSignature = req.headers.get("payment-signature");
+
+    if (expectedPaymentAmountMismatch(req.headers, requirements.amount)) {
+      return NextResponse.json(
+        {
+          error: "Payment quote changed",
+          reason: "The current x402 price no longer matches the buyer-approved quote.",
+        },
+        { status: 409 },
+      );
+    }
 
     // No payment — return 402 with Gateway batching payment requirements
     if (!paymentSignature) {

@@ -6,6 +6,7 @@ import { RunReceiptPoller } from "@/components/run-receipt-poller";
 import TopoBackground from "@/components/topo-background";
 import { SOURCES } from "@/lib/marketplace";
 import { loadReceiptPaymentEvidence, type PaymentEvidence } from "@/lib/payment-evidence";
+import { publicRealRunResult } from "@/lib/public-run-result";
 import { REAL_SOURCES } from "@/lib/real-sources";
 import { getRunReceiptWithStaleTimeout } from "@/lib/run-receipts";
 import { settlementReferencesFromPayload } from "@/lib/receipt-settlements";
@@ -72,7 +73,10 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   const isComparison = payload.kind === "comparison";
   const comparisonRows = isComparison ? comparisonRowsFromPayload(payload) : [];
   const agentRow = comparisonRows.find((row) => row.key === "reasoning-agent");
-  const result = isComparison ? agentRow?.result ?? null : asRecord(payload.result);
+  const rawResult = isComparison ? agentRow?.result ?? null : asRecord(payload.result);
+  const result = receipt.mode === "real" && !isComparison
+    ? asRecord(publicRealRunResult(receipt.subject, rawResult))
+    : rawResult;
   const score = (isComparison ? agentRow?.score ?? null : asRecord(payload.score)) as ReceiptScore | null;
   const events = (
     isComparison
@@ -167,9 +171,9 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
         {receipt.status === "completed" && recovery?.kind === "deterministic-paid-evidence" && (
           <section className="mt-5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
-            The inference provider became unavailable after settlement. Crux completed a transparent, limited brief
-            only from the evidence already paid for and delivered. The paid tool loop was not restarted, and no
-            additional source payment was made.
+            {recovery.relevantEvidenceFound === false
+              ? "Evidence synthesis failed after settlement. No delivered source matched the literal subject, so Crux made no factual claim. The paid tool loop was not restarted, and no additional source payment was made."
+              : "Evidence synthesis failed after settlement. Crux completed a transparent, limited brief only from the evidence already paid for and delivered. The paid tool loop was not restarted, and no additional source payment was made."}
           </section>
         )}
 

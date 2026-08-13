@@ -43,12 +43,15 @@ interface RunResult {
 }
 interface RealRunResult extends RunResult {
   subject: string;
+  outcome?: "grounded-brief" | "insufficient-evidence" | "degraded-recovery";
   citations: { sourceId: string; url: string }[];
   recovery?: {
     kind: "deterministic-paid-evidence";
-    reason: "provider-unavailable-after-settlement";
+    reason: "provider-unavailable-after-settlement" | "inference-failed-after-settlement";
     degraded: true;
     noAdditionalPayments: true;
+    relevantEvidenceFound?: boolean;
+    providerFailureKind?: string;
     sourceIds: string[];
   };
 }
@@ -82,6 +85,7 @@ interface Stats {
   independentExternalPayers?: number;
   completedTasks?: number;
   recoveredTasks?: number;
+  insufficientEvidenceTasks?: number;
   costPerCompletedTaskUsdc?: number;
   budgetUtilization?: number;
   recent?: RecentPayment[];
@@ -908,9 +912,16 @@ function StatsBar({ stats }: { stats: Stats | null }) {
           </div>
         ))}
       </div>
-      {!!stats?.recoveredTasks && (
+      {!!((stats?.recoveredTasks ?? 0) + (stats?.insufficientEvidenceTasks ?? 0)) && (
         <p className="mt-2 text-right text-[11px] text-amber-400/80">
-          {stats.recoveredTasks} degraded evidence-only recovery {stats.recoveredTasks === 1 ? "run" : "runs"} excluded from completed-task metrics
+          {[
+            stats?.recoveredTasks
+              ? `${stats.recoveredTasks} degraded ${stats.recoveredTasks === 1 ? "run" : "runs"}`
+              : null,
+            stats?.insufficientEvidenceTasks
+              ? `${stats.insufficientEvidenceTasks} insufficient-evidence ${stats.insufficientEvidenceTasks === 1 ? "run" : "runs"}`
+              : null,
+          ].filter(Boolean).join(" and ")} excluded from completed-task metrics
         </p>
       )}
     </div>
@@ -1026,7 +1037,7 @@ function JudgeProofPanel() {
     {
       pct: "30%",
       name: "Traction",
-      text: "Every run emits Gateway-settled test-USDC payments, plus optional visitor-funded wallets for distinct payer signal.",
+      text: "Purchase-bearing runs emit Gateway-settled test-USDC payments, plus optional visitor-funded wallets for distinct payer signal.",
     },
     {
       pct: "20%",
@@ -1493,8 +1504,9 @@ function RealResultPanel({ done }: { done: RealDone }) {
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/55 p-4 backdrop-blur-sm md:col-span-2">
         {result.recovery && (
           <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-200">
-            The inference provider became unavailable after settlement. Crux completed this limited brief only from
-            the already paid evidence and made no additional source payment.
+            {result.recovery.relevantEvidenceFound === false
+              ? "Evidence synthesis failed after settlement. No delivered source matched the literal subject, so Crux made no factual claim and made no additional source payment."
+              : "Evidence synthesis failed after settlement. Crux completed this limited brief only from the already paid evidence and made no additional source payment."}
           </div>
         )}
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

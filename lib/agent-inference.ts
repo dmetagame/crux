@@ -29,6 +29,7 @@ interface RunAgentInferenceOptions<T> {
   purchaseAttempted: () => boolean;
   run: (attempt: AgentInferenceAttempt) => Promise<T>;
   resetBeforeFallback?: () => void;
+  shouldFallback?: (error: unknown) => boolean;
 }
 
 const DEFAULT_DIRECT_GEMINI_MODEL = "gemini-3.1-flash-lite";
@@ -54,10 +55,12 @@ export async function runAgentInferenceWithFallback<T>(
     const fallback = primary.route === "direct-gemini"
       ? gateway
       : directGeminiAttempt();
+    const shouldFallback = options.shouldFallback?.(primaryError)
+      ?? isAiProviderAvailabilityFailure(primaryError);
     if (
       options.purchaseAttempted()
       || !fallback
-      || !isAiProviderAvailabilityFailure(primaryError)
+      || !shouldFallback
     ) {
       throw primaryError;
     }
@@ -71,7 +74,9 @@ export async function runAgentInferenceWithFallback<T>(
       };
     } catch (fallbackError) {
       if (options.purchaseAttempted()) throw fallbackError;
-      if (isAiProviderAvailabilityFailure(fallbackError)) {
+      const fallbackFailed = options.shouldFallback?.(fallbackError)
+        ?? isAiProviderAvailabilityFailure(fallbackError);
+      if (fallbackFailed && isAiProviderAvailabilityFailure(fallbackError)) {
         throw combinedFallbackError(fallbackError);
       }
       throw fallbackError;
@@ -158,7 +163,7 @@ function combinedFallbackError(fallbackError: unknown) {
     ? fallbackError.message.trim()
     : String(fallbackError);
   const error = new Error(
-    `Both configured inference routes failed before any source payment: ${detail}`,
+    `Both configured inference routes failed during this retry-safe inference phase: ${detail}`,
     { cause: fallbackError },
   );
   error.name = "AgentInferenceFallbackError";

@@ -19,6 +19,7 @@ import {
   type AgentInferenceRoute,
 } from "./agent-inference.ts";
 import { gatewayFundingPlan } from "./release-readiness.ts";
+import { normalizePaidResponse } from "./paid-response.ts";
 
 export interface LedgerEntry {
   n: number;
@@ -152,28 +153,33 @@ export async function runResearchAgent(opts: RunOpts): Promise<RunResult> {
           gateway,
           url,
           budgetAtomic - spentAtomic,
+          {
+            onSettled: (settled) => {
+              purchased.add(sourceId);
+              spentAtomic += settled.amount;
+              const paid = normalizePaidResponse(settled.data);
+              if (paid.delivered) deliveredSources.add(sourceId);
+              const entry: LedgerEntry = {
+                n: ledger.length + 1,
+                sourceId,
+                price: `$${formatUsdcAtomic(settled.amount)}`,
+                listedPrice: meta.price,
+                amountAtomic: settled.amount.toString(),
+                delivered: paid.delivered,
+                rationale,
+                tx: settled.transaction || undefined,
+              };
+              ledger.push(entry);
+              emit({ kind: "purchase", ...entry });
+            },
+          },
         );
-        purchased.add(sourceId);
-        if (res.data.delivered) deliveredSources.add(sourceId);
-        spentAtomic += res.amount;
-        const price = `$${formatUsdcAtomic(res.amount)}`;
-        const entry: LedgerEntry = {
-          n: ledger.length + 1,
-          sourceId,
-          price,
-          listedPrice: meta.price,
-          amountAtomic: res.amount.toString(),
-          delivered: res.data.delivered,
-          rationale,
-          tx: res.transaction || undefined,
-        };
-        ledger.push(entry);
-        emit({ kind: "purchase", ...entry });
         const spent = usdcAtomicToNumber(spentAtomic);
+        const paid = normalizePaidResponse(res.data);
         return {
           sourceId,
-          delivered: res.data.delivered,
-          content: res.data.content,
+          delivered: paid.delivered,
+          content: paid.content,
           spentSoFar: round(spent),
           remaining: round(budget - spent),
         };

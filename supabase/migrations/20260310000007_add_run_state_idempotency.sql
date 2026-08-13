@@ -1,8 +1,8 @@
 -- Durable run state and idempotency for paid agent runs.
 --
--- Existing run_receipts remain public proof artifacts. New rows can now start
--- as running, finish as completed/failed, and be de-duplicated by a scoped
--- idempotency key so retries do not accidentally spend twice.
+-- Receipt proof remains public through the sanitized app/API projections. New
+-- rows can now start as running, finish as completed/failed, and be
+-- de-duplicated by a scoped idempotency key so retries do not spend twice.
 
 alter table public.run_receipts
   add column if not exists status text not null default 'completed'

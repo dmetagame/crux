@@ -11,6 +11,7 @@ const MICRO_USDC = BigInt(1_000_000);
 export function aggregateRunMetrics(rows: MetricsRunRow[]) {
   let completed = 0;
   let recovered = 0;
+  let insufficientEvidence = 0;
   let spent = BigInt(0);
   let budget = BigInt(0);
   const actorCategories = { house: 0, visitor: 0, trustedAgent: 0 };
@@ -21,6 +22,10 @@ export function aggregateRunMetrics(rows: MetricsRunRow[]) {
       recovered += 1;
       continue;
     }
+    if (runOutcome(row.payload) === "insufficient-evidence") {
+      insufficientEvidence += 1;
+      continue;
+    }
     completed += 1;
     spent += decimalToAtomic(row.spent_usdc);
     budget += decimalToAtomic(row.budget_usdc);
@@ -29,13 +34,18 @@ export function aggregateRunMetrics(rows: MetricsRunRow[]) {
     else if (kind === "trusted-agent") actorCategories.trustedAgent += 1;
     else actorCategories.house += 1;
   }
-  return { completed, recovered, spent, budget, actorCategories };
+  return { completed, recovered, insufficientEvidence, spent, budget, actorCategories };
 }
 
 function isDegradedRecovery(payload: Record<string, unknown> | null | undefined) {
   const result = recordValue(payload?.result);
   const recovery = recordValue(result?.recovery);
   return recovery?.degraded === true;
+}
+
+function runOutcome(payload: Record<string, unknown> | null | undefined) {
+  const result = recordValue(payload?.result);
+  return typeof result?.outcome === "string" ? result.outcome : null;
 }
 
 function decimalToAtomic(value: unknown) {

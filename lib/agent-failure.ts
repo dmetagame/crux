@@ -9,6 +9,15 @@ export type AgentFailureDetails = {
   paidEvidenceRetained: boolean;
 };
 
+export type AiProviderFailureKind =
+  | "capacity"
+  | "timeout"
+  | "authentication"
+  | "model-unavailable"
+  | "network"
+  | "provider-unavailable"
+  | "unknown";
+
 export function agentFailureDetails(
   error: unknown,
   spentUsdc: number,
@@ -95,6 +104,27 @@ export function isAiProviderAvailabilityFailure(error: unknown) {
     );
 
   return hasAiProviderSignal(combined) && availabilitySignal;
+}
+
+export function aiProviderFailureKind(error: unknown): AiProviderFailureKind {
+  const record = recordValue(error);
+  const status = finiteNumber(record?.statusCode) ?? finiteNumber(record?.status);
+  const combined = aiProviderErrorText(error);
+  if (status === 429 || /rate limit|too many requests|quota|credits?|capacity|free tier/i.test(combined)) {
+    return "capacity";
+  }
+  if (status === 408 || /timed? out|timeout|aborted/i.test(combined)) return "timeout";
+  if (status === 401 || status === 403 || /api key|credential|unauthori[sz]ed|forbidden/i.test(combined)) {
+    return "authentication";
+  }
+  if (status === 404 || /no longer available|not available to new users|model (?:is )?(?:not found|unsupported|deprecated|retired)/i.test(combined)) {
+    return "model-unavailable";
+  }
+  if (/connection (?:reset|refused|failed)|fetch failed|network error/i.test(combined)) return "network";
+  if ((status !== null && status >= 500) || /service unavailable|temporarily unavailable/i.test(combined)) {
+    return "provider-unavailable";
+  }
+  return "unknown";
 }
 
 function errorMessage(error: unknown) {

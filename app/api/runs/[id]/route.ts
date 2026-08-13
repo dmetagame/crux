@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clientIp, consumeRateLimit, limitKey, rateLimitHeaders } from "@/lib/rate-limit";
 import { loadReceiptPaymentEvidence, type PaymentEvidence } from "@/lib/payment-evidence";
+import { publicRealRunResult } from "@/lib/public-run-result";
 import { getRunReceiptWithStaleTimeout, runStaleTimeoutSeconds, type RunReceipt } from "@/lib/run-receipts";
 
 export const maxDuration = 15;
@@ -39,7 +40,10 @@ function toRunStatus(receipt: RunReceipt, requestUrl: string, paymentEvidence: P
   const agentDone = isComparison
     ? recordValue(recordValue(payload.results)?.["reasoning-agent"])
     : null;
-  const result = isComparison ? recordValue(agentDone?.result) : recordValue(payload.result);
+  const rawResult = isComparison ? recordValue(agentDone?.result) : recordValue(payload.result);
+  const result = receipt.mode === "real" && !isComparison
+    ? recordValue(publicRealRunResult(receipt.subject, rawResult))
+    : rawResult;
   const score = isComparison ? recordValue(agentDone?.score) : recordValue(payload.score);
   const events = isComparison
     ? arrayValue(payload.events)

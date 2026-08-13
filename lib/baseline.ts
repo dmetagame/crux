@@ -19,6 +19,7 @@ import { catalog, getPreview } from "./marketplace.ts";
 import { ensureGatewayFunded, type RunResult, type LedgerEntry, type AgentEvent } from "./agent.ts";
 import { payWithinBudget } from "./paid-purchase.ts";
 import { formatUsdcAtomic, usdcAtomicToNumber, usdcNumberToAtomic } from "./usdc.ts";
+import { normalizePaidResponse } from "./paid-response.ts";
 
 export type Strategy = "cheapest" | "quality" | "preview";
 
@@ -52,31 +53,36 @@ export async function runBaseline(opts: BaselineOpts): Promise<RunResult> {
   for (const s of pick) {
     if (usdcNumberToAtomic(s.priceUsdc) > budgetAtomic - spentAtomic) continue;
     const url = `${baseUrl}${s.purchaseUrl}?topic=${encodeURIComponent(topic)}&seed=${encodeURIComponent(seed)}`;
-    const res = await payWithinBudget<{ delivered: boolean; content: string }>(
-      gateway,
-      url,
-      budgetAtomic - spentAtomic,
-    );
-    spentAtomic += res.amount;
     const rationale =
       strategy === "cheapest"
         ? "cheapest available"
         : strategy === "quality"
           ? "advertised high quality"
           : "preview indicates company-specific, dependable evidence";
-    const entry: LedgerEntry = {
-      n: ledger.length + 1,
-      sourceId: s.id,
-      price: `$${formatUsdcAtomic(res.amount)}`,
-      listedPrice: s.price,
-      amountAtomic: res.amount.toString(),
-      delivered: res.data.delivered,
-      rationale,
-      tx: res.transaction || undefined,
-    };
-    ledger.push(entry);
-    emit({ kind: "purchase", ...entry });
-    if (res.data.delivered) briefParts.push(res.data.content);
+    await payWithinBudget<{ delivered: boolean; content: string }>(
+      gateway,
+      url,
+      budgetAtomic - spentAtomic,
+      {
+        onSettled: (settled) => {
+          spentAtomic += settled.amount;
+          const paid = normalizePaidResponse(settled.data);
+          const entry: LedgerEntry = {
+            n: ledger.length + 1,
+            sourceId: s.id,
+            price: `$${formatUsdcAtomic(settled.amount)}`,
+            listedPrice: s.price,
+            amountAtomic: settled.amount.toString(),
+            delivered: paid.delivered,
+            rationale,
+            tx: settled.transaction || undefined,
+          };
+          ledger.push(entry);
+          emit({ kind: "purchase", ...entry });
+          if (paid.delivered) briefParts.push(paid.content);
+        },
+      },
+    );
   }
 
   // The naive "brief" is just everything it bought, stitched together.

@@ -1,4 +1,5 @@
 import type { RunReceipt } from "@/lib/run-receipts";
+import { publicRealRunResult } from "@/lib/public-run-result";
 
 export function runReceiptUrl(origin: string, receiptId: string) {
   return new URL(`/runs/${receiptId}`, origin).toString();
@@ -17,7 +18,9 @@ export function replayRunReceipt(receipt: RunReceipt, origin: string) {
       status: 200,
       body: {
         type: "done",
-        result: payload.result ?? null,
+        result: receipt.mode === "real"
+          ? publicRealRunResult(receipt.subject, payload.result)
+          : payload.result ?? null,
         ...(payload.score ? { score: payload.score } : {}),
         receiptId: receipt.id,
         receiptUrl,

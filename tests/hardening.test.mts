@@ -30,12 +30,20 @@ import {
 import { sanitizePaymentEvidenceRow } from "../lib/payment-evidence.ts";
 import { buildPaidEvidenceRecovery } from "../lib/paid-evidence-recovery.ts";
 import { classifyPaymentActor } from "../lib/payer-attribution.ts";
+import { publicRealRunResult } from "../lib/public-run-result.ts";
+import { runRealResearchAgent } from "../lib/real-agent.ts";
 import { gatewayFundingPlan, gatewayRunReadiness } from "../lib/release-readiness.ts";
 import { aggregateRunMetrics } from "../lib/run-metrics.ts";
 import { settlementReferencesFromPayload } from "../lib/receipt-settlements.ts";
 import { untrustedSourceData } from "../lib/untrusted-source.ts";
 import { visitorWalletReadiness } from "../lib/wallet-readiness.ts";
 import { addressFromPrivateKey, getHistoricalHouseAddresses, getHouseAddress } from "../lib/wallet-keys.ts";
+import {
+  evidenceMatchesSubject,
+  subjectLooksLikeHandle,
+  subjectMatchesCandidate,
+} from "../lib/subject-relevance.ts";
+import { normalizeRealPurchasePlan } from "../lib/real-research-plan.ts";
 
 test("Gateway fallback order excludes the requested primary and duplicates", () => {
   withEnv({
@@ -208,12 +216,147 @@ test("paid evidence recovery is grounded, deterministic, and payment locked", ()
 
   assert.equal(recovered.recovery.degraded, true);
   assert.equal(recovered.recovery.noAdditionalPayments, true);
+  assert.equal(recovered.recovery.relevantEvidenceFound, true);
   assert.deepEqual(recovered.recovery.sourceIds, ["wikipedia"]);
   assert.equal(recovered.claims.length, 1);
   assert.deepEqual(recovered.claims[0].sourceIds, ["wikipedia"]);
   assert.match(recovered.claims[0].text, /Example Co was founded in 2020/);
   assert.doesNotMatch(recovered.claims[0].text, /buy more data/i);
   assert.match(recovered.brief, /did not restart the paid tool loop/i);
+});
+
+test("fuzzy source hits do not become evidence for a different literal subject", () => {
+  assert.equal(subjectLooksLikeHandle("Otaku.hugo"), true);
+  assert.equal(subjectLooksLikeHandle("@otaku"), true);
+  assert.equal(subjectLooksLikeHandle("St. Jude"), false);
+  assert.equal(subjectMatchesCandidate("Otaku.hugo", "Anime"), false);
+  assert.equal(subjectMatchesCandidate("Otaku.hugo", "Otaku"), false);
+  assert.equal(subjectMatchesCandidate("Otaku.hugo", "Otaku Hugo"), true);
+  assert.equal(subjectMatchesCandidate("Meta", "Metadata platform"), false);
+  assert.equal(subjectMatchesCandidate("Tesla", "Nikola Tesla"), false);
+  assert.equal(subjectMatchesCandidate("Tesla", "Tesla, Inc."), true);
+  assert.equal(subjectMatchesCandidate("Stripe", "Stripe, Inc."), true);
+  assert.equal(subjectMatchesCandidate("Coinbase Global", "Coinbase"), true);
+  assert.equal(subjectMatchesCandidate("Coinbase Global", "Coinbase Global, Inc."), true);
+  assert.equal(subjectMatchesCandidate("Meta Platforms", "Meta Platforms, Inc."), true);
+  assert.equal(subjectMatchesCandidate("Meta Platforms", "Meta"), true);
+  assert.equal(evidenceMatchesSubject("Otaku.hugo", "Anime is animation originating from Japan."), false);
+  assert.equal(
+    evidenceMatchesSubject(
+      "Tesla",
+      "Wikipedia — Nikola Tesla (inventor): Nikola Tesla developed alternating-current systems.",
+    ),
+    false,
+  );
+  assert.equal(evidenceMatchesSubject("Coinbase", "Apple blocks Coinbase Wallet"), true);
+  assert.equal(
+    evidenceMatchesSubject(
+      "Coinbase Global",
+      "Wikipedia — Coinbase (cryptocurrency exchange): Coinbase operates a cryptocurrency exchange.",
+    ),
+    true,
+  );
+
+  const recovered = buildPaidEvidenceRecovery("Otaku.hugo", [
+    {
+      sourceId: "wikipedia",
+      sourceName: "Wikipedia Overview",
+      content: "Wikipedia — Anime (Japanese animation): Anime is animation originating from Japan.",
+      citationUrl: "https://en.wikipedia.org/wiki/Anime",
+    },
+  ], "capacity");
+
+  assert.equal(recovered.recovery.relevantEvidenceFound, false);
+  assert.equal(recovered.recovery.providerFailureKind, "capacity");
+  assert.deepEqual(recovered.recovery.sourceIds, []);
+  assert.deepEqual(recovered.claims, []);
+  assert.deepEqual(recovered.factsClaimed, []);
+  assert.match(recovered.brief, /makes no factual claim/i);
+});
+
+test("the Otaku.hugo receipt regression is rejected before inference or payment", async () => {
+  const events: unknown[] = [];
+  const result = await runRealResearchAgent({
+    model: "anthropic/claude-haiku-4.5",
+    subject: "Otaku.hugo",
+    budget: 0.03,
+    baseUrl: "https://crux.test",
+    buyerKey: `0x${"1".repeat(64)}`,
+    onEvent: (event) => events.push(event),
+  });
+
+  assert.equal(result.outcome, "insufficient-evidence");
+  assert.equal(result.model, "crux/deterministic-subject-gate");
+  assert.equal(result.spent, 0);
+  assert.deepEqual(result.ledger, []);
+  assert.deepEqual(result.factsClaimed, []);
+  assert.deepEqual(result.claims, []);
+  assert.deepEqual(result.citations, []);
+  assert.deepEqual(events, []);
+  assert.match(result.brief, /rejected fuzzy matches/i);
+});
+
+test("legacy recovery receipts quarantine claims for a mismatched literal subject", () => {
+  const result = publicRealRunResult("Otaku.hugo", {
+    brief: "Recovery brief for Otaku.hugo\n\n• Wikipedia reports: Anime is animation originating from Japan.",
+    factsClaimed: ["Wikipedia reports: Anime is animation originating from Japan."],
+    claims: [{
+      text: "Wikipedia reports: Anime is animation originating from Japan.",
+      sourceIds: ["wikipedia"],
+      evidence: "Wikipedia — Anime (Japanese animation): Anime is animation originating from Japan.",
+    }],
+    citations: [{ sourceId: "wikipedia", url: "https://en.wikipedia.org/wiki/Anime" }],
+    ledger: [{ sourceId: "wikipedia", amountAtomic: "2000", tx: "gateway-reference" }],
+    recovery: {
+      kind: "deterministic-paid-evidence",
+      reason: "provider-unavailable-after-settlement",
+      degraded: true,
+      noAdditionalPayments: true,
+      sourceIds: ["wikipedia"],
+    },
+  }) as Record<string, any>;
+
+  assert.deepEqual(result.factsClaimed, []);
+  assert.deepEqual(result.claims, []);
+  assert.deepEqual(result.citations, []);
+  assert.equal(result.recovery.relevantEvidenceFound, false);
+  assert.deepEqual(result.recovery.sourceIds, []);
+  assert.equal(result.ledger[0].tx, "gateway-reference");
+  assert.match(result.brief, /immutable payment ledger/i);
+  assert.doesNotMatch(result.brief, /Anime is animation/i);
+});
+
+test("real purchase plans are deduplicated, budget-bound, capped, and catalog-only", () => {
+  const normalized = normalizeRealPurchasePlan([
+    { sourceId: "unknown", rationale: "Not in the marketplace" },
+    { sourceId: "edgar", rationale: "Too expensive for this budget" },
+    { sourceId: "wikipedia", rationale: "Broad grounding" },
+    { sourceId: "wikipedia", rationale: "Duplicate" },
+    { sourceId: "wikidata", rationale: "Overlapping identity source" },
+    { sourceId: "news", rationale: "Independent current discussion" },
+  ], BigInt(5_000));
+
+  assert.deepEqual(
+    normalized.map(({ sourceId, rationale, amountAtomic }) => ({
+      sourceId,
+      rationale,
+      amountAtomic: amountAtomic.toString(),
+    })),
+    [
+      { sourceId: "wikipedia", rationale: "Broad grounding", amountAtomic: "2000" },
+      { sourceId: "news", rationale: "Independent current discussion", amountAtomic: "3000" },
+    ],
+  );
+});
+
+test("real purchase plan budget enforcement can skip an expensive source and accept a later fit", () => {
+  const normalized = normalizeRealPurchasePlan([
+    { sourceId: "edgar", rationale: "Authoritative but unaffordable" },
+    { sourceId: "news", rationale: "Affordable current discussion" },
+  ], BigInt(3_000));
+
+  assert.deepEqual(normalized.map((item) => item.sourceId), ["news"]);
+  assert.equal(normalized[0]?.amountAtomic, BigInt(3_000));
 });
 
 test("degraded recoveries are excluded from completed-task metrics", () => {
@@ -232,6 +375,13 @@ test("degraded recoveries are excluded from completed-task metrics", () => {
     {
       status: "completed",
       budget_usdc: 0.03,
+      spent_usdc: 0.006,
+      payer_kind: "visitor-wallet",
+      payload: { result: { outcome: "insufficient-evidence" } },
+    },
+    {
+      status: "completed",
+      budget_usdc: 0.03,
       spent_usdc: 0.012,
       payer_kind: "visitor-wallet",
       payload: { result: { brief: "normal" } },
@@ -240,6 +390,7 @@ test("degraded recoveries are excluded from completed-task metrics", () => {
 
   assert.equal(metrics.completed, 1);
   assert.equal(metrics.recovered, 1);
+  assert.equal(metrics.insufficientEvidence, 1);
   assert.equal(metrics.spent, BigInt(12_000));
   assert.equal(metrics.actorCategories.visitor, 1);
 });
@@ -271,6 +422,56 @@ test("direct Gemini agent errors are not mislabeled as provider outages", async 
       (error) => error === validationError,
     );
     assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
+  });
+});
+
+test("retry-safe inference phases may fail over without reopening a paid loop", async () => {
+  await withEnvAsync({
+    GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+    GEMINI_API_KEY: undefined,
+    CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
+  }, async () => {
+    const attempts: string[] = [];
+    const validationError = new Error("synthesis output failed validation");
+
+    const result = await runAgentInferenceWithFallback({
+      primaryModel: "anthropic/claude-haiku-4.5",
+      purchaseAttempted: () => false,
+      shouldFallback: () => true,
+      run: async (attempt) => {
+        attempts.push(attempt.route);
+        if (attempt.route === "ai-gateway") throw validationError;
+        return "grounded synthesis";
+      },
+    });
+
+    assert.equal(result.value, "grounded synthesis");
+    assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
+    assert.equal(result.fallbackFrom, "anthropic/claude-haiku-4.5");
+  });
+});
+
+test("retry-safe fallback does not mislabel two validation failures as provider downtime", async () => {
+  await withEnvAsync({
+    GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
+    GEMINI_API_KEY: undefined,
+    CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
+  }, async () => {
+    const validationError = new Error("the synthesizer returned unsupported claims");
+    await assert.rejects(
+      () => runAgentInferenceWithFallback({
+        primaryModel: "anthropic/claude-haiku-4.5",
+        purchaseAttempted: () => false,
+        shouldFallback: () => true,
+        run: async () => {
+          throw validationError;
+        },
+      }),
+      (error) => error === validationError,
+    );
+    assert.equal(isAiProviderAvailabilityFailure(validationError), false);
   });
 });
 

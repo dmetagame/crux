@@ -102,6 +102,7 @@ export async function GET(req: NextRequest) {
           : 0,
         completedTasks: runs.completed,
         recoveredTasks: runs.recovered,
+        insufficientEvidenceTasks: runs.insufficientEvidence,
         costPerCompletedTaskUsdc: runs.completed ? atomicToNumber(runs.spent) / runs.completed : 0,
         budgetUtilization: runs.budget > BigInt(0) ? Number(runs.spent * BigInt(10000) / runs.budget) / 10000 : 0,
         runActorCategories: runs.actorCategories,

@@ -13,9 +13,10 @@ Circle's facilitator in sub-500ms and batch-settled on Arc via Circle Gateway. *
 is the product.**
 
 ## What it does (two surfaces, one engine)
-1. **Research a real subject** — name any company, project, or person. Crux shops live paid sources
-   (Wikipedia, Wikidata, SEC EDGAR, Hacker News), previews for free, and buys only what fits, then
-   returns a *cited* brief. The visible decision: it pays $0.01 for SEC filings on a **public** company
+1. **Research a real subject** — name any company, project, or person. Crux evaluates live paid sources
+   (Wikipedia, Wikidata, SEC EDGAR, Hacker News), commits to an immutable budget-capped plan of at most
+   two sources, executes each x402 payment exactly once, then synthesizes a *cited* brief without payment
+   tools. The visible decision: it pays $0.01 for SEC filings on a **public** company
    (Nvidia, Coinbase, Palantir) and **skips** that spend for a **private** one (OpenAI, Anthropic,
    Stripe) — the agent reasons about what the subject *is* before spending.
 2. **Benchmark (scored vs baselines)** — a controlled marketplace with a hidden answer key, built so
@@ -24,7 +25,7 @@ is the product.**
    beats naive "buy-cheapest" / "buy-by-quality" baselines: it captures the load-bearing red flags and
    refuses the rumor the baselines swallow. This is our objective proof that the agent decides *well*.
 
-Every run on either surface fires real test-USDC settlements on Arc, counted live on the page.
+Every purchase-bearing run on either surface fires real test-USDC settlements on Arc, counted live on the page. An ambiguous or unsupported real-subject query can safely spend zero.
 Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
 purchase rationales, final brief, benchmark score when available, and Circle facilitator evidence
 metadata, with ArcScan links when a real Arc transaction hash is available.
@@ -93,13 +94,16 @@ deterministic and zero-latency; filings enrichment is best-effort live).
 - The demo LLM is Haiku 4.5 — a deliberate budget decision, applied to our own stack: it hits the
   benchmark ceiling (11/11, trap avoided, rumor refused) at a fraction of frontier-model cost, which is
   exactly the cost/value judgment Crux exists to make. If Haiku is unavailable, Gateway can fail over
-  inside the same tool loop without replaying purchases. Visitor-funded runs can use an independently metered
-  direct Gemini route after a production health check and can switch routes only before a purchase attempt. Crux never restarts a paid tool
-  loop. If inference disappears after settlement, it can publish a clearly marked, limited recovery brief
+  inside the same benchmark tool loop without replaying purchases. Visitor-funded real-subject runs can use an independently metered
+  direct Gemini route after a production health check. Planning can switch routes before payment, and the separate
+  synthesis phase can switch after settlement because it has no payment tools. Crux never restarts the immutable payment
+  executor. If synthesis fails after settlement, it can publish a clearly marked, limited recovery brief
   deterministically from already delivered evidence, without tools or another payment; the receipt records the
   model, route, and recovery mode.
-- Real-subject mode depends on live public APIs; obscure subjects may return less. Curated example chips
-  are unambiguous public/private companies that showcase the spend decision cleanly.
+- Real-subject mode depends on live public APIs; obscure or ambiguous subjects may produce an empty plan
+  and zero spend. Paid source misses remain visible in the receipt, fuzzy source matches are rejected,
+  and insufficient-evidence runs make no factual claims. Curated example chips are unambiguous
+  public/private companies that showcase the spend decision cleanly.
 - Built on Circle's `arc-nanopayments` reference (Apache-2.0); the validity-window fix, the marketplace,
   the scorer, the real-data layer, the agents, and the UI are ours.
 
