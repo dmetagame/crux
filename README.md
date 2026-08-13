@@ -170,9 +170,11 @@ Enable the direct Gemini route explicitly with
 for provider availability, quota, credential, or timeout failures before the
 agent starts any x402 purchase. Visitor-funded runs remain Gateway-first until
 `CRUX_VISITOR_DIRECT_GEMINI_PRIMARY_ENABLED=true` is set and redeployed after a
-successful production health check. Google states that free-tier request content
-may be used to improve its products, so do not send confidential research
-subjects through the free tier.
+successful production health check. The tested direct default is
+`gemini-3.1-flash-lite`; validate replacements with the protected
+`/api/admin/ai-health?mode=agent` dry tool loop before enabling them. Google
+states that free-tier request content may be used to improve its products, so
+do not send confidential research subjects through the free tier.
 Generated wallet env names are testnet-scoped:
 ```
 CRUX_KEY_SCOPE=arc-testnet

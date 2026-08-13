@@ -31,7 +31,7 @@ interface RunAgentInferenceOptions<T> {
   resetBeforeFallback?: () => void;
 }
 
-const DEFAULT_DIRECT_GEMINI_MODEL = "gemini-3.5-flash";
+const DEFAULT_DIRECT_GEMINI_MODEL = "gemini-3.1-flash-lite";
 const DIRECT_GEMINI_PREFIX = "google-direct/";
 
 export async function runAgentInferenceWithFallback<T>(

@@ -73,7 +73,7 @@ test("direct Gemini fallback is limited to provider failures before purchase att
     GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
     GEMINI_API_KEY: undefined,
     CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
-    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
   }, async () => {
     const capacityError = Object.assign(new Error("AI Gateway free tier rate limit"), {
       name: "AI_APICallError",
@@ -98,7 +98,7 @@ test("direct Gemini fallback is limited to provider failures before purchase att
     assert.deepEqual(attempts, ["ai-gateway", "direct-gemini"]);
     assert.equal(result.fallbackFrom, "anthropic/claude-haiku-4.5");
     assert.deepEqual(modelsUsedForInference([], result.attempt), [
-      "google-direct/gemini-3.5-flash",
+      "google-direct/gemini-3.1-flash-lite",
     ]);
   });
 });
@@ -108,7 +108,7 @@ test("visitor inference can prefer direct Gemini and fail over only before spend
     GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
     GEMINI_API_KEY: undefined,
     CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
-    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
   }, async () => {
     const capacityError = Object.assign(new Error("Google Generative AI quota unavailable"), {
       name: "AI_APICallError",
@@ -129,7 +129,7 @@ test("visitor inference can prefer direct Gemini and fail over only before spend
     assert.equal(result.value, "ready");
     assert.deepEqual(attempts, ["direct-gemini", "ai-gateway"]);
     assert.equal(result.attempt.route, "ai-gateway");
-    assert.equal(result.fallbackFrom, "google-direct/gemini-3.5-flash");
+    assert.equal(result.fallbackFrom, "google-direct/gemini-3.1-flash-lite");
   });
 });
 
@@ -165,7 +165,7 @@ test("a fallback route is never replayed after it makes a purchase attempt", asy
     GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
     GEMINI_API_KEY: undefined,
     CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
-    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
   }, async () => {
     const directFailure = Object.assign(new Error("Google Generative AI service unavailable"), {
       name: "AI_APICallError",
@@ -249,7 +249,7 @@ test("direct Gemini agent errors are not mislabeled as provider outages", async 
     GOOGLE_GENERATIVE_AI_API_KEY: "test-key",
     GEMINI_API_KEY: undefined,
     CRUX_DIRECT_GEMINI_FALLBACK_ENABLED: "true",
-    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.5-flash",
+    CRUX_DIRECT_GEMINI_MODEL: "gemini-3.1-flash-lite",
   }, async () => {
     const capacityError = Object.assign(new Error("AI Gateway service unavailable"), {
       name: "AI_APICallError",
