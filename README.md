@@ -139,6 +139,14 @@ scoped Crux agent key.
 - Receipts record Circle Gateway settlement references for each paid source.
   Crux links ArcScan only when Gateway exposes a real Arc EVM transaction hash;
   otherwise the durable proof is the Gateway ref stored in the receipt/payment ledger.
+- Gateway settlement changes internal Gateway balances, so the batch transaction
+  does not emit an ERC-20 `Transfer` for each nanopayment and the payer's wallet
+  USDC balance does not move at batch time. Crux decodes the successful
+  `submitBatch` calldata and `BatchProcessed` event to expose the on-chain batch
+  id plus the aggregate payer debit and seller credit.
+- The public Circle transfer endpoint supplies the UUID-to-transaction mapping.
+  The UUID is not derived from the on-chain batch id, so receipts present these
+  as separate evidence layers instead of claiming a purely cryptographic join.
 
 ## Beyond Arc: genuine external counterparties
 
@@ -256,6 +264,9 @@ agent topics, and public agent budget guard. Override the target with
   missing, stale, failed, or inconsistent. Gateway nanopayments settle in batches:
   the initial UUID is a Circle transfer reference, while the eventual Arc hash is
   shared by every payment in that batch.
+  Reconciliation also decodes `submitBatch` and requires the Arc batch deltas to
+  cover Circle's reported payer debit and seller credit before marking the proof
+  `arc_confirmed`.
 - Set `CRON_SECRET` in Vercel production for the reconciliation route. Crux does
   not trust cron user-agent headers; reconciliation requires either
   `Authorization: Bearer $CRON_SECRET` or `CRUX_MAINTENANCE_TOKEN`.
@@ -288,7 +299,9 @@ npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 `external:pay-crux` prints Circle's transfer UUID immediately. Because Gateway
 settles nanopayments in batches, `gatewayStatus` may initially be `received` or
 `batched` and `arcTxHash` may be `null`; the printed Circle status URL and Crux
-proof URL expose the shared Arc batch hash once confirmation completes.
+proof URL expose the shared Arc batch hash once confirmation completes. They
+also expose the `BatchProcessed` id and decoded payer/seller Gateway balance
+deltas when Arc confirmation is available.
 
 Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`,
 `CRUX_DIRECT_GEMINI_MODEL`, `CRUX_DIRECT_GEMINI_FALLBACK_ENABLED`, `TOPIC`,

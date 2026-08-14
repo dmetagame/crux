@@ -28,7 +28,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     );
   }
 
-  const paymentEvidence = await loadReceiptPaymentEvidence(receipt.payload);
+  const paymentEvidence = await loadReceiptPaymentEvidence(receipt.payload, {
+    refreshGateway: receipt.status !== "running",
+  });
   return NextResponse.json(toRunStatus(receipt, req.url, paymentEvidence), {
     headers: { "Cache-Control": "no-store" },
   });

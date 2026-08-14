@@ -36,6 +36,33 @@ export type FacilitatorSettleEvidence = {
   network: string | null;
 };
 
+export type GatewayTransferEvidence = {
+  id: string;
+  status: string;
+  fromAddress: string;
+  toAddress: string;
+  amountAtomic: string;
+  nonce: string;
+  txHash: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ArcBatchEvidence = {
+  batchId: string;
+  signer: string;
+  tokenAddress: string;
+  domain: number;
+  gatewayWalletAddress: string;
+  deltaCount: number;
+  netDeltaAtomic: string;
+  payerDeltaAtomic: string | null;
+  payToDeltaAtomic: string | null;
+  expectedAmountAtomic: string;
+  containsExpectedDeltas: boolean;
+  exactExpectedDeltas: boolean;
+};
+
 export type PaymentEvidence = {
   id: string | null;
   createdAt: string | null;
@@ -54,6 +81,8 @@ export type PaymentEvidence = {
   settlementCheckedAt: string | null;
   gatewayTransferStatus: string | null;
   gatewayTransferUrl: string | null;
+  gatewayTransfer: GatewayTransferEvidence | null;
+  arcBatchEvidence: ArcBatchEvidence | null;
   facilitatorRequirements: FacilitatorRequirementsEvidence | null;
   facilitatorVerify: FacilitatorVerifyEvidence | null;
   facilitatorSettle: FacilitatorSettleEvidence | null;
@@ -145,6 +174,8 @@ export function sanitizePaymentEvidenceRow(row: Record<string, unknown>): Paymen
     settlementCheckedAt: text(row.settlement_checked_at, 128),
     gatewayTransferStatus: text(row.gateway_transfer_status, 64),
     gatewayTransferUrl: gatewayTransferUrl(settlementReference),
+    gatewayTransfer: sanitizeGatewayTransferEvidence(recordValue(row.gateway_transfer)),
+    arcBatchEvidence: sanitizeArcBatchEvidence(recordValue(row.arc_batch_evidence)),
     facilitatorRequirements: requirements
       ? {
           scheme: text(requirements.scheme, 64),
@@ -217,6 +248,8 @@ async function refreshGatewayEvidenceRow(
     ...row,
     ...(applyResolution ? resolution.columns : {}),
     gateway_transfer_status: resolution.gatewayTransferStatus,
+    gateway_transfer: resolution.gatewayTransfer,
+    arc_batch_evidence: resolution.arcBatchEvidence,
   };
 
   const id = text(row.id, 128);
@@ -239,6 +272,87 @@ async function refreshGatewayEvidenceRow(
   }
 
   return merged;
+}
+
+function sanitizeGatewayTransferEvidence(
+  value: Record<string, unknown> | null,
+): GatewayTransferEvidence | null {
+  if (!value) return null;
+  const id = text(value.id, 64);
+  const status = text(value.status, 64);
+  const fromAddress = text(value.fromAddress, 128);
+  const toAddress = text(value.toAddress, 128);
+  const amountAtomic = scalarText(value.amount, 64);
+  const nonce = text(value.nonce, 128);
+  const createdAt = text(value.createdAt, 128);
+  const updatedAt = text(value.updatedAt, 128);
+  if (
+    !id ||
+    !status ||
+    !fromAddress ||
+    !toAddress ||
+    !amountAtomic ||
+    !nonce ||
+    !createdAt ||
+    !updatedAt
+  ) {
+    return null;
+  }
+  return {
+    id,
+    status,
+    fromAddress,
+    toAddress,
+    amountAtomic,
+    nonce,
+    txHash: text(value.txHash, 128),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function sanitizeArcBatchEvidence(
+  value: Record<string, unknown> | null,
+): ArcBatchEvidence | null {
+  if (!value) return null;
+  const batchId = text(value.batchId, 128);
+  const signer = text(value.signer, 128);
+  const tokenAddress = text(value.tokenAddress, 128);
+  const domain = finiteNumber(value.domain);
+  const gatewayWalletAddress = text(value.gatewayWalletAddress, 128);
+  const deltaCount = finiteNumber(value.deltaCount);
+  const netDeltaAtomic = scalarText(value.netDeltaAtomic, 64);
+  const expectedAmountAtomic = scalarText(value.expectedAmountAtomic, 64);
+  const containsExpectedDeltas = booleanValue(value.containsExpectedDeltas);
+  const exactExpectedDeltas = booleanValue(value.exactExpectedDeltas);
+  if (
+    !batchId ||
+    !signer ||
+    !tokenAddress ||
+    domain === null ||
+    !gatewayWalletAddress ||
+    deltaCount === null ||
+    !netDeltaAtomic ||
+    !expectedAmountAtomic ||
+    containsExpectedDeltas === null ||
+    exactExpectedDeltas === null
+  ) {
+    return null;
+  }
+  return {
+    batchId,
+    signer,
+    tokenAddress,
+    domain,
+    gatewayWalletAddress,
+    deltaCount,
+    netDeltaAtomic,
+    payerDeltaAtomic: scalarText(value.payerDeltaAtomic, 64),
+    payToDeltaAtomic: scalarText(value.payToDeltaAtomic, 64),
+    expectedAmountAtomic,
+    containsExpectedDeltas,
+    exactExpectedDeltas,
+  };
 }
 
 function settlementProofChanged(

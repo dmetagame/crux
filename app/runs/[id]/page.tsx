@@ -70,7 +70,7 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
 
   const payload = receipt.payload;
   const paymentEvidence = await loadReceiptPaymentEvidence(payload, {
-    refreshGateway: true,
+    refreshGateway: receipt.status !== "running",
   });
   const isComparison = payload.kind === "comparison";
   const comparisonRows = isComparison ? comparisonRowsFromPayload(payload) : [];
@@ -425,7 +425,7 @@ function PaymentEvidenceSection({
       <div className="border-b border-zinc-800 px-4 py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">x402 facilitator evidence</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Sanitized requirements, verify, and settle fields joined from the payment ledger. No payment signatures or private data are exposed.
+          Circle&apos;s public transfer endpoint joins each UUID to a shared Arc batch transaction. Arc submitBatch calldata independently exposes the batch id and aggregate Gateway balance deltas; no ERC-20 Transfer event is expected.
         </p>
       </div>
       {evidence.length === 0 ? (
@@ -455,12 +455,25 @@ function PaymentEvidenceSection({
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <EvidenceBadge label="verify" state={verified} positive="valid" negative="invalid" />
                   <EvidenceBadge label="settle" state={settled} positive="accepted" negative="failed" />
+                  {item.arcBatchEvidence && (
+                    <div className="col-span-2">
+                      <EvidenceBadge
+                        label="Arc deltas"
+                        state={item.arcBatchEvidence.containsExpectedDeltas}
+                        positive={item.arcBatchEvidence.exactExpectedDeltas ? "exact payer/seller match" : "payment covered by batch totals"}
+                        negative="payment deltas missing"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="mt-3 space-y-1 text-zinc-500">
                   <div>payer <span className="font-mono text-zinc-300">{shortAddress(item.payer)}</span></div>
                   <div>status <span className="text-zinc-300">{settlementStatusLabel(item.settlementStatus)}</span></div>
                   {item.gatewayTransferStatus && (
                     <div>Circle batch <span className="text-zinc-300">{item.gatewayTransferStatus}</span></div>
+                  )}
+                  {item.arcBatchEvidence && (
+                    <div>batch id <span className="font-mono text-zinc-300" title={item.arcBatchEvidence.batchId}>{shortAddress(item.arcBatchEvidence.batchId)}</span></div>
                   )}
                   <div>scheme <span className="text-zinc-300">{item.facilitatorRequirements?.scheme ?? "legacy record"}</span></div>
                   <div>asset <span className="font-mono text-zinc-300">{shortAddress(item.facilitatorRequirements?.asset)}</span></div>
@@ -496,6 +509,13 @@ function PaymentEvidenceSection({
                     <div>settle.transaction: {item.facilitatorSettle?.transaction ?? "unavailable"}</div>
                     <div>payTo: {item.facilitatorRequirements?.payTo ?? "unavailable"}</div>
                     <div>verifyingContract: {item.facilitatorRequirements?.extra?.verifyingContract ?? "unavailable"}</div>
+                    <div>Circle transfer.id: {item.gatewayTransfer?.id ?? "unavailable"}</div>
+                    <div>Circle transfer.nonce: {item.gatewayTransfer?.nonce ?? "unavailable"}</div>
+                    <div>Arc batch.id: {item.arcBatchEvidence?.batchId ?? "unavailable"}</div>
+                    <div>Arc batch.signer: {item.arcBatchEvidence?.signer ?? "unavailable"}</div>
+                    <div>Arc batch.deltaCount: {item.arcBatchEvidence?.deltaCount ?? "unavailable"}</div>
+                    <div>Arc payer delta: {formatAtomicDelta(item.arcBatchEvidence?.payerDeltaAtomic)}</div>
+                    <div>Arc seller delta: {formatAtomicDelta(item.arcBatchEvidence?.payToDeltaAtomic)}</div>
                   </div>
                 </details>
               </article>
@@ -571,6 +591,21 @@ function modelLabel(model?: string | null) {
 function shortAddress(value?: string | null) {
   if (!value) return "unavailable";
   return value.length > 18 ? `${value.slice(0, 8)}...${value.slice(-6)}` : value;
+}
+
+function formatAtomicDelta(value?: string | null) {
+  if (!value || !/^-?\d+$/.test(value)) return "unavailable";
+  const atomic = BigInt(value);
+  const zero = BigInt(0);
+  const microUsdc = BigInt(1_000_000);
+  const sign = atomic < zero ? "-" : atomic > zero ? "+" : "";
+  const absolute = atomic < zero ? -atomic : atomic;
+  const whole = absolute / microUsdc;
+  const fraction = (absolute % microUsdc)
+    .toString()
+    .padStart(6, "0")
+    .replace(/0+$/, "");
+  return `${value} atomic (${sign}${whole}${fraction ? `.${fraction}` : ""} USDC)`;
 }
 
 function pretty(id: string) {

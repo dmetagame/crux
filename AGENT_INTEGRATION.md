@@ -63,8 +63,9 @@ npm run external:pay-crux
 endpoint, refuses a higher quote or non-Crux origin, enforces an absolute
 `$0.10` test-USDC ceiling, signs the inspected challenge rather than refetching
 an unchecked price, and prints the payer address, settlement reference, Circle
-transfer-status URL, current batch status, any available Arc batch hash, and the
-public sanitized proof URL. Send the payer address and proof URL to the Crux
+transfer-status URL, current batch status, any available Arc batch hash, the
+on-chain batch id and decoded payer/seller deltas, and the public sanitized proof
+URL. Send the payer address and proof URL to the Crux
 maintainer; after the address is explicitly added
 to `CRUX_EXTERNAL_X402_PAYER_ADDRESSES`, `/api/stats` counts it as an independent
 external payer rather than guessing from unknown addresses.
@@ -72,7 +73,12 @@ external payer rather than guessing from unknown addresses.
 Circle returns a transfer UUID immediately because nanopayments are settled in
 batches. The command also prints Circle's transfer-status URL and the current
 `gatewayStatus`. After the batch is confirmed, the status endpoint and the Crux
-proof URL expose the shared Arc batch transaction hash.
+proof URL expose the shared Arc batch transaction hash. Gateway updates internal
+balances rather than emitting one ERC-20 `Transfer` per nanopayment. The Arc
+transaction's `submitBatch` calldata contains aggregate address deltas, and its
+`BatchProcessed` event exposes the batch id. Circle's public transfer endpoint is
+the evidence layer that maps the transfer UUID to that shared transaction; the
+UUID is not a hash of the batch id.
 
 Useful paid surfaces:
 

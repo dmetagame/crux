@@ -28,7 +28,10 @@ is the product.**
 Every purchase-bearing run on either surface fires real test-USDC settlements on Arc, counted live on the page. An ambiguous or unsupported real-subject query can safely spend zero.
 Completed runs also produce a public receipt URL (`/runs/<id>`) with the source decisions,
 purchase rationales, final brief, benchmark score when available, and Circle facilitator evidence
-metadata, with ArcScan links when a real Arc transaction hash is available.
+metadata, with ArcScan links when a real Arc transaction hash is available. Confirmed proofs also
+show the Gateway `BatchProcessed` id and decoded `submitBatch` payer/seller balance deltas. Circle's
+public transfer endpoint provides the UUID-to-batch-transaction mapping; Crux does not claim the UUID
+is cryptographically derivable from the on-chain batch id.
 This gives judges a durable artifact to inspect asynchronously instead of relying on a live demo moment.
 
 ## Golden receipts

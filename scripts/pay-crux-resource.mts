@@ -2,10 +2,8 @@ import { BatchEvmScheme, GatewayClient } from "@circle-fin/x402-batching/client"
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import {
-  fetchGatewayX402Transfer,
-  gatewayTransferUrl,
-} from "../lib/gateway-transfer.ts";
+import { gatewayTransferUrl } from "../lib/gateway-transfer.ts";
+import { resolveSettlementProof } from "../lib/settlement-verifier.ts";
 import { parseAtomicAmount } from "../lib/usdc.ts";
 
 const ARC_NETWORK = "eip155:5042002";
@@ -110,15 +108,29 @@ const proofUrl = `${baseUrl}/api/payments/by-reference/${encodeURIComponent(sett
 const circleTransferUrl = gatewayTransferUrl(settlement.transaction);
 let gatewayStatus: string | null = null;
 let arcTxHash: string | null = null;
+let arcBatchId: string | null = null;
+let arcBatchPayerDeltaAtomic: string | null = null;
+let arcBatchSellerDeltaAtomic: string | null = null;
+let arcBatchExactDeltas = false;
 try {
-  const transfer = await fetchGatewayX402Transfer(settlement.transaction, {
-    network: ARC_NETWORK,
-    payer,
-    payTo: gatewayRequirements.payTo,
-    amountAtomic: quotedAtomic.toString(),
+  const resolution = await resolveSettlementProof(settlement.transaction, {
+    resolveGatewayReference: true,
+    expectedGatewayTransfer: {
+      network: ARC_NETWORK,
+      payer,
+      payTo: gatewayRequirements.payTo,
+      amountAtomic: quotedAtomic.toString(),
+    },
   });
-  gatewayStatus = transfer?.status ?? null;
-  arcTxHash = transfer?.txHash ?? null;
+  gatewayStatus = resolution.gatewayTransferStatus;
+  arcTxHash = resolution.columns.arc_tx_hash;
+  arcBatchId = resolution.arcBatchEvidence?.batchId ?? null;
+  arcBatchPayerDeltaAtomic =
+    resolution.arcBatchEvidence?.payerDeltaAtomic ?? null;
+  arcBatchSellerDeltaAtomic =
+    resolution.arcBatchEvidence?.payToDeltaAtomic ?? null;
+  arcBatchExactDeltas =
+    resolution.arcBatchEvidence?.exactExpectedDeltas ?? false;
 } catch (error) {
   console.warn(
     `Payment succeeded, but Circle transfer status was not yet available: ${(error as Error).message}`,
@@ -133,9 +145,13 @@ console.log(JSON.stringify({
   gatewayStatus,
   gatewayTransferUrl: circleTransferUrl,
   arcTxHash,
+  arcBatchId,
+  arcBatchPayerDeltaAtomic,
+  arcBatchSellerDeltaAtomic,
+  arcBatchExactDeltas,
   proofUrl,
   settlementNote:
-    "Circle Gateway batches nanopayments asynchronously. The transfer URL and Crux proof resolve to a shared batch-level Arc transaction hash after Circle confirms the batch.",
+    "Circle maps the transfer UUID to a shared Arc batch transaction asynchronously. The transaction's submitBatch calldata contains Gateway balance deltas rather than ERC-20 Transfer logs; Crux exposes the on-chain batch id plus the payer and seller deltas when available.",
   next:
     "Send the payer address and proofUrl to the Crux maintainer so the address can be explicitly attributed as an independent external x402 payer.",
 }, null, 2));

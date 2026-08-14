@@ -7,7 +7,6 @@ import {
   type SettlementStatus,
 } from "./settlement.ts";
 import {
-  buildSettlementProofColumns,
   resolveSettlementProof,
   type SettlementProofColumns,
 } from "./settlement-verifier.ts";
@@ -24,6 +23,7 @@ export type PaymentReconciliationIssueCode =
   | "gateway_transfer_failed"
   | "gateway_transfer_lookup_failed"
   | "gateway_tx_missing"
+  | "arc_batch_evidence_mismatch"
   | "stale_settlement_check"
   | "unexpected_network"
   | "payment_event_update_failed";
@@ -189,18 +189,28 @@ async function reconcilePaymentRow(
     });
   } catch (error) {
     const message = (error as Error).message;
+    const batchEvidenceFailure =
+      /batch|delta|submitBatch|BatchProcessed|transaction target/i.test(message);
     issues.push(
       issue(
         row,
-        "gateway_transfer_lookup_failed",
-        /does not match|unexpected|invalid|missing/i.test(message) ? "critical" : "warning",
-        `Circle Gateway transfer lookup failed: ${message}`,
+        batchEvidenceFailure
+          ? "arc_batch_evidence_mismatch"
+          : "gateway_transfer_lookup_failed",
+        batchEvidenceFailure || /does not match|unexpected|invalid|missing/i.test(message)
+          ? "critical"
+          : "warning",
+        batchEvidenceFailure
+          ? `Arc Gateway batch evidence failed validation: ${message}`
+          : `Circle Gateway transfer lookup failed: ${message}`,
         classified.settlementReference,
       ),
     );
     resolution = {
-      columns: await buildSettlementProofColumns(classified.settlementReference),
+      columns: storedSettlementProof(row, classified),
       gatewayTransferStatus: null,
+      gatewayTransfer: null,
+      arcBatchEvidence: null,
     };
   }
   const proof = resolution.columns;
@@ -298,6 +308,23 @@ async function reconcilePaymentRow(
   }
 
   return { issues, updated };
+}
+
+function storedSettlementProof(
+  row: PaymentEventRow,
+  classified: ReturnType<typeof classifySettlementReference>,
+): SettlementProofColumns {
+  return {
+    settlement_reference: classified.settlementReference,
+    settlement_kind: row.settlement_kind ?? classified.settlementKind,
+    settlement_status: row.settlement_status ?? classified.settlementStatus,
+    arc_tx_hash: row.arc_tx_hash,
+    arc_chain_id: row.arc_chain_id,
+    arc_block_number:
+      row.arc_block_number === null ? null : String(row.arc_block_number),
+    arc_confirmed_at: row.arc_confirmed_at,
+    settlement_checked_at: new Date().toISOString(),
+  };
 }
 
 function bestSettlementReference(row: PaymentEventRow) {

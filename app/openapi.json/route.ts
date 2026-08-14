@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
             { name: "reference", in: "path", required: true, schema: { type: "string", maxLength: 512 } },
           ],
           responses: {
-            "200": { description: "Sanitized facilitator evidence plus current Circle batch status and confirmed Arc hash when available" },
+            "200": { description: "Sanitized facilitator evidence, Circle's UUID-to-batch mapping, and decoded Arc batch id and payer/seller deltas when confirmed" },
             "404": { description: "Payment proof not found" },
           },
           "x-rateLimit": "120 requests/minute/IP",

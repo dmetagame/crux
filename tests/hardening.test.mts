@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { encodeAbiParameters, encodeFunctionData } from "viem";
 import {
   agentFallbackModels,
   modelsUsedFromSteps,
@@ -23,6 +24,15 @@ import {
 } from "../lib/agent-failure.ts";
 import { spendAfterAgentEvent } from "../lib/agent-event-spend.ts";
 import { alertErrorMessage } from "../lib/alerts.ts";
+import {
+  ARC_GATEWAY_DOMAIN,
+  ARC_GATEWAY_WALLET,
+  ARC_TESTNET_USDC,
+  decodeArcGatewayBatchEvidence,
+  GATEWAY_BATCH_CALLDATA_PARAMS,
+  GATEWAY_BATCH_PROCESSED_TOPIC,
+  GATEWAY_SUBMIT_BATCH_ABI,
+} from "../lib/arc-batch-proof.ts";
 import { gitShaMatches } from "../lib/deployment-version.ts";
 import {
   proofReferenceFromUrl,
@@ -736,6 +746,67 @@ test("Circle Gateway transfer parsing rejects mismatched payment evidence", () =
   );
 });
 
+test("Arc submitBatch calldata exposes the batch id and payer/seller deltas", () => {
+  const reference = "a03c2eb4-6855-43f2-84df-720c9bf2cf07";
+  const payer = "0x1111111111111111111111111111111111111111";
+  const seller = "0x2222222222222222222222222222222222222222";
+  const signer = "0x3333333333333333333333333333333333333333";
+  const batchId = `0x${"a".repeat(64)}` as `0x${string}`;
+  const transactionHash = `0x${"b".repeat(64)}`;
+  const calldataBytes = encodeAbiParameters(GATEWAY_BATCH_CALLDATA_PARAMS, [
+    [
+      { depositor: payer, value: BigInt(-1000) },
+      { depositor: seller, value: BigInt(1000) },
+    ],
+    batchId,
+    ARC_GATEWAY_DOMAIN,
+    ARC_TESTNET_USDC,
+    ARC_GATEWAY_WALLET,
+  ]);
+  const transactionInput = encodeFunctionData({
+    abi: GATEWAY_SUBMIT_BATCH_ABI,
+    functionName: "submitBatch",
+    args: [calldataBytes, "0x1234"],
+  });
+  const transfer = parseGatewayX402Transfer(reference, {
+    id: reference,
+    status: "completed",
+    token: "USDC",
+    sendingNetwork: "eip155:5042002",
+    recipientNetwork: "eip155:5042002",
+    fromAddress: payer,
+    toAddress: seller,
+    amount: "1000",
+    nonce: `0x${"c".repeat(64)}`,
+    txHash: transactionHash,
+    createdAt: "2026-08-14T14:23:52.916Z",
+    updatedAt: "2026-08-14T14:38:04.120Z",
+  });
+  const evidence = decodeArcGatewayBatchEvidence({
+    transactionInput,
+    transactionTo: ARC_GATEWAY_WALLET,
+    logs: [{
+      address: ARC_GATEWAY_WALLET,
+      topics: [
+        GATEWAY_BATCH_PROCESSED_TOPIC,
+        batchId,
+        addressTopic(signer),
+        addressTopic(ARC_TESTNET_USDC),
+      ],
+      data: "0x",
+    }],
+    transfer,
+    expectedDomain: ARC_GATEWAY_DOMAIN,
+  });
+
+  assert.equal(evidence.batchId, batchId);
+  assert.equal(evidence.payerDeltaAtomic, "-1000");
+  assert.equal(evidence.payToDeltaAtomic, "1000");
+  assert.equal(evidence.netDeltaAtomic, "0");
+  assert.equal(evidence.containsExpectedDeltas, true);
+  assert.equal(evidence.exactExpectedDeltas, true);
+});
+
 test("strict Circle Gateway reconciliation rejects an unknown transfer reference", async () => {
   await assert.rejects(
     resolveSettlementProof("e899bac2-f32a-4259-8294-99a7a599cb3a", {
@@ -786,12 +857,15 @@ test("independent payment proof validates the complete Arc Gateway evidence chai
     expectedPayer: payer,
     expectedPayTo: seller,
     expectedReference: reference,
+    requireArcBatchEvidence: true,
   });
 
   assert.equal(verified.payer, payer);
   assert.equal(verified.endpoint, "/api/premium/quote");
   assert.equal(verified.amountAtomic, BigInt(1000));
   assert.equal(verified.settlementReference, reference);
+  assert.equal(verified.arcTxHash, `0x${"a".repeat(64)}`);
+  assert.equal(verified.arcBatchId, `0x${"b".repeat(64)}`);
 });
 
 test("independent payment proof rejects mismatches and unsafe amounts", () => {
@@ -952,6 +1026,10 @@ test("Gateway fee estimates support live and documented response shapes", () => 
   );
 });
 
+function addressTopic(address: string) {
+  return `0x${address.slice(2).padStart(64, "0")}` as `0x${string}`;
+}
+
 function withEnv(values: Record<string, string | undefined>, run: () => void) {
   const previous = new Map(Object.keys(values).map((name) => [name, process.env[name]]));
   try {
@@ -1002,6 +1080,26 @@ function externalProofFixture(input: {
       amountAtomic: amount,
       network: "eip155:5042002",
       settlementReference: reference,
+      settlementStatus: "arc_confirmed",
+      arcTxHash: `0x${"a".repeat(64)}`,
+      gatewayTransfer: {
+        id: reference,
+        status: "completed",
+        fromAddress: input.payer,
+        toAddress: input.seller,
+        amountAtomic: amount,
+        txHash: `0x${"a".repeat(64)}`,
+      },
+      arcBatchEvidence: {
+        batchId: `0x${"b".repeat(64)}`,
+        tokenAddress: ARC_TESTNET_USDC,
+        gatewayWalletAddress: ARC_GATEWAY_WALLET,
+        netDeltaAtomic: "0",
+        payerDeltaAtomic: `-${amount}`,
+        payToDeltaAtomic: amount,
+        expectedAmountAtomic: amount,
+        containsExpectedDeltas: true,
+      },
       facilitatorRequirements: {
         scheme: "exact",
         network: "eip155:5042002",

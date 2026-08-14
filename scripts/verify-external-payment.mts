@@ -44,12 +44,15 @@ const verified = verifyExternalPaymentProof({
   expectedPayer: payer,
   expectedReference: reference,
   expectedPayTo: getSellerAddress(),
+  requireArcBatchEvidence: true,
 });
 
 console.log("PASS independent payer address is not a Crux house, seller, or visitor wallet");
 console.log("PASS Circle facilitator verification and settlement both succeeded");
 console.log(`PASS ${verified.amountAtomic} atomic USDC paid ${verified.endpoint} on Arc Testnet`);
 console.log(`PASS settlement reference ${verified.settlementReference}`);
+console.log(`PASS Circle maps the reference to Arc batch transaction ${verified.arcTxHash}`);
+console.log(`PASS Arc submitBatch calldata and BatchProcessed event validate batch ${verified.arcBatchId}`);
 console.log("");
 if (!args.attestIndependent) {
   fail(

@@ -10,6 +10,8 @@ export type VerifiedExternalPayment = {
   endpoint: string;
   amountAtomic: bigint;
   settlementReference: string;
+  arcTxHash: string | null;
+  arcBatchId: string | null;
 };
 
 export function verifyExternalPaymentProof(input: {
@@ -18,6 +20,7 @@ export function verifyExternalPaymentProof(input: {
   expectedReference?: string | null;
   expectedPayTo?: string | null;
   maxAmountAtomic?: bigint;
+  requireArcBatchEvidence?: boolean;
 }): VerifiedExternalPayment {
   if (!isAddress(input.expectedPayer)) {
     throw new Error("Expected payer is not a valid EVM address.");
@@ -105,12 +108,87 @@ export function verifyExternalPaymentProof(input: {
     throw new Error("Proof URL reference does not match the payment evidence.");
   }
 
+  const arcProof = input.requireArcBatchEvidence
+    ? verifyArcBatchEvidence({
+        payment,
+        settlementReference,
+        payer: expectedPayer,
+        payTo,
+        amountAtomic,
+      })
+    : { arcTxHash: null, arcBatchId: null };
+
   return {
     payer: expectedPayer as `0x${string}`,
     endpoint,
     amountAtomic,
     settlementReference,
+    ...arcProof,
   };
+}
+
+function verifyArcBatchEvidence(input: {
+  payment: Record<string, unknown>;
+  settlementReference: string;
+  payer: string;
+  payTo: string;
+  amountAtomic: bigint;
+}) {
+  if (input.payment.settlementStatus !== "arc_confirmed") {
+    throw new Error("Arc batch evidence is not confirmed yet; retry after Circle settles the batch.");
+  }
+  const arcTxHash = requiredText(input.payment.arcTxHash, "Arc batch transaction hash");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(arcTxHash)) {
+    throw new Error("Arc batch transaction hash is invalid.");
+  }
+
+  const gatewayTransfer = requiredRecord(
+    input.payment.gatewayTransfer,
+    "Circle Gateway transfer",
+  );
+  if (requiredText(gatewayTransfer.id, "Circle transfer id") !== input.settlementReference) {
+    throw new Error("Circle transfer id does not match the settlement reference.");
+  }
+  if (!["confirmed", "completed"].includes(requiredText(gatewayTransfer.status, "Circle transfer status"))) {
+    throw new Error("Circle transfer has not reached a confirmed batch status.");
+  }
+  if (getAddress(requiredAddress(gatewayTransfer.fromAddress, "Circle transfer payer")) !== input.payer) {
+    throw new Error("Circle transfer payer does not match the payment proof.");
+  }
+  if (getAddress(requiredAddress(gatewayTransfer.toAddress, "Circle transfer seller")) !== getAddress(input.payTo)) {
+    throw new Error("Circle transfer seller does not match the payment proof.");
+  }
+  if (requiredText(gatewayTransfer.amountAtomic, "Circle transfer amount") !== input.amountAtomic.toString()) {
+    throw new Error("Circle transfer amount does not match the payment proof.");
+  }
+  if (requiredText(gatewayTransfer.txHash, "Circle transfer batch hash").toLowerCase() !== arcTxHash.toLowerCase()) {
+    throw new Error("Circle transfer batch hash does not match the Arc proof.");
+  }
+
+  const batch = requiredRecord(input.payment.arcBatchEvidence, "decoded Arc batch evidence");
+  const arcBatchId = requiredText(batch.batchId, "Arc batch id");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(arcBatchId)) {
+    throw new Error("Arc batch id is invalid.");
+  }
+  if (getAddress(requiredAddress(batch.tokenAddress, "Arc batch token")) !== getAddress(ARC_TESTNET_USDC)) {
+    throw new Error("Arc batch uses an unexpected token.");
+  }
+  if (getAddress(requiredAddress(batch.gatewayWalletAddress, "Arc Gateway wallet")) !== getAddress(ARC_TESTNET_GATEWAY_WALLET)) {
+    throw new Error("Arc batch targets an unexpected Gateway wallet.");
+  }
+  if (batch.netDeltaAtomic !== "0" || batch.containsExpectedDeltas !== true) {
+    throw new Error("Arc batch deltas do not cover the expected payer debit and seller credit.");
+  }
+  if (requiredText(batch.expectedAmountAtomic, "Arc batch expected amount") !== input.amountAtomic.toString()) {
+    throw new Error("Arc batch expected amount does not match the payment proof.");
+  }
+  const payerDelta = requiredSignedInteger(batch.payerDeltaAtomic, "Arc payer delta");
+  const payToDelta = requiredSignedInteger(batch.payToDeltaAtomic, "Arc seller delta");
+  if (payerDelta > -input.amountAtomic || payToDelta < input.amountAtomic) {
+    throw new Error("Arc batch address deltas are insufficient for this payment.");
+  }
+
+  return { arcTxHash, arcBatchId };
 }
 
 export function proofReferenceFromUrl(proofUrl: URL, baseUrl: URL) {
@@ -177,6 +255,12 @@ function requiredAddress(value: unknown, label: string) {
   const address = requiredText(value, label);
   if (!isAddress(address)) throw new Error(`Proof ${label} is not a valid EVM address.`);
   return address;
+}
+
+function requiredSignedInteger(value: unknown, label: string) {
+  const text = requiredText(value, label);
+  if (!/^-?\d+$/.test(text)) throw new Error(`Proof ${label} is not an integer.`);
+  return BigInt(text);
 }
 
 function formatAtomic(value: bigint) {
