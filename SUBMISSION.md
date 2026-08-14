@@ -40,6 +40,12 @@ This gives judges a durable artifact to inspect asynchronously instead of relyin
 - Private-company spend decision, OpenAI: https://crux-khaki.vercel.app/runs/e015e4c9-d14b-4e66-90e5-f3cb53e5924c
 - Scored benchmark, Northwind Logistics: https://crux-khaki.vercel.app/runs/9859fecb-488b-478d-a5bc-fec3899d9229
 - Agent-vs-baselines comparison: https://crux-khaki.vercel.app/runs/512afc48-1a8f-410d-89a4-64e63303b0f5
+- Visitor-funded wallet run: https://crux-khaki.vercel.app/runs/3435deef-7695-42d3-802b-c8b076829f16
+- Independent external payer proof: https://crux-khaki.vercel.app/api/payments/by-reference/a03c2eb4-6855-43f2-84df-720c9bf2cf07
+  (Arc batch transaction `0x9b9ad63559cb71bc35a6d8cc70a0d3f34449ac029118360ff8a68255b7a631b8`, batch ID
+  `0x07abc00177df0972dd2d30b56e76e37c056babb0760be0cba15597e97a9afd67`).
+- Seller withdrawal proof: https://testnet.arcscan.app/tx/0xa57197aa1457688e01eb71da4812f8e3a44d421ebf24047a3abfd2539e417811
+  (`0.01` USDC withdrawn on Arc Testnet with a confirmed receipt).
 
 ## Agent-access story
 Crux is not only a website. Other agents can discover and use it through:
@@ -58,9 +64,11 @@ post-hackathon API posture credible.
 - **Agentic sophistication (30%)** — the agent makes genuine cost/value tradeoffs (preview vs buy,
   public-vs-private EDGAR call, redundancy avoidance, rumor skepticism), not scripted automation. The
   Benchmark tab proves this objectively against a ground-truth key and naive baselines.
-- **Traction (30%)** — public proof first: Crux has already produced hundreds of settled autonomous
-  test-USDC payments, visible in the live counter (autonomous payments / test-USDC settled / sub-cent
-  avg tx size / distinct payers, recorded from settled x402 payments) and in durable receipt pages.
+- **Traction (30%)** — public proof first: Crux has already produced 369 settled autonomous test-USDC
+  payments totaling $3.0288, with 16 distinct payer wallets, 9 visitor-funded wallets, and 1 independently
+  attributed external payer at the time of this audit. These metrics are visible in the live counter
+  (autonomous payments / test-USDC settled / sub-cent avg tx size / distinct payers, recorded from settled
+  x402 payments) and in durable receipt pages.
   Judges can inspect the golden receipts asynchronously, then run the product hands-on through the
   self-funded visitor wallet lane: generate a fresh Crux-hosted Arc testnet wallet (capability tokens
   expire and are not recovered by email), fund it at the official Circle faucet, and run research from
@@ -70,7 +78,8 @@ post-hackathon API posture credible.
   concurrency locks — the budget-control systems RFB-01 explicitly asks for.
 - **Circle tool usage (20%)** — Circle Gateway batching + x402 (HTTP 402) on Arc; the app is both buyer
   (the agent) and seller (x402-gated source endpoints). Plus an external-counterparty leg paying a
-  third-party x402 resource via the Coinbase x402 Bazaar (`npm run external-demo`).
+  third-party x402 resource via the Coinbase x402 Bazaar (`npm run external-demo`), and a confirmed seller
+  withdrawal back to the seller wallet on Arc Testnet.
 - **Innovation (20%)** — spending-judgment-as-product on *real* data, with an objective scoring harness
   most agents can't show, and a public/private discrimination that makes the budget decision legible.
 
@@ -79,9 +88,9 @@ post-hackathon API posture credible.
   account. To run the agent hands-on, a visitor self-funds their own Arc testnet wallet (generate →
   Circle faucet → run) and lands on the counter as a distinct payer; house-wallet runs are reserved for
   operator sessions and scoped agent keys so unauthenticated callers cannot spend the house budget.
-  Current counter: see the top of crux-khaki.vercel.app (e.g., 300+ autonomous payments, ~$2.75
-  test-USDC settled, sub-cent average, across multiple distinct payer wallets). Shareable example chips and
-  golden receipts lower the barrier to a first look.
+  Current counter at audit time: 369 autonomous payments, $3.0288 test-USDC settled, $0.0082 average
+  payment, 16 distinct payer wallets, 9 visitor-funded wallets, 1 independently attributed external payer,
+  and 41 completed tasks. Shareable example chips and golden receipts lower the barrier to a first look.
 - **Problem addressed:** paid APIs/data are priced per-request, but agents have no judgment about which
   purchases are worth it under a budget — they over-buy or buy blind. Crux is that missing judgment
   layer: it decides, pays, cites, and stops while budget remains.
