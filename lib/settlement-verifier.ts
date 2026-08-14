@@ -1,7 +1,13 @@
-import { createPublicClient, http } from "viem";
+import { createPublicClient, getAddress, http } from "viem";
+import {
+  fetchGatewayX402Transfer,
+  type GatewayTransferExpectation,
+  type GatewayTransferStatus,
+} from "./gateway-transfer.ts";
 import {
   ARC_TESTNET_CHAIN_ID,
   classifySettlementReference,
+  isEvmTxHash,
   type SettlementKind,
   type SettlementStatus,
 } from "./settlement.ts";
@@ -10,9 +16,14 @@ const ARC_TESTNET_RPC =
   process.env.ARC_TESTNET_RPC_URL ??
   process.env.NEXT_PUBLIC_ARC_RPC_URL ??
   "https://rpc.testnet.arc.network";
+const ARC_TESTNET_GATEWAY_WALLET =
+  "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 
 const publicClient = createPublicClient({
-  transport: http(ARC_TESTNET_RPC),
+  transport: http(ARC_TESTNET_RPC, {
+    retryCount: 0,
+    timeout: 5_000,
+  }),
 });
 
 export interface SettlementProofColumns {
@@ -26,33 +37,107 @@ export interface SettlementProofColumns {
   settlement_checked_at: string | null;
 }
 
+export type SettlementProofResolution = {
+  columns: SettlementProofColumns;
+  gatewayTransferStatus: GatewayTransferStatus | null;
+};
+
+type SettlementProofOptions = {
+  resolveGatewayReference?: boolean;
+  strictGatewayResolution?: boolean;
+  expectedGatewayTransfer?: GatewayTransferExpectation;
+  gatewayFetcher?: typeof fetch;
+  knownArcTxHash?: string | null;
+};
+
 export async function buildSettlementProofColumns(
   reference?: string | null,
+  options: SettlementProofOptions = {},
 ): Promise<SettlementProofColumns> {
+  return (await resolveSettlementProof(reference, options)).columns;
+}
+
+export async function resolveSettlementProof(
+  reference?: string | null,
+  options: SettlementProofOptions = {},
+): Promise<SettlementProofResolution> {
   const classified = classifySettlementReference(reference);
   const checkedAt = new Date().toISOString();
+  const knownArcTxHash = options.knownArcTxHash?.trim();
+  let arcTxHash = classified.arcTxHash ??
+    (knownArcTxHash && isEvmTxHash(knownArcTxHash) ? knownArcTxHash : null);
+  let gatewayTransferStatus: GatewayTransferStatus | null = null;
+  let resolvedFromGateway = false;
+
+  if (
+    options.resolveGatewayReference &&
+    classified.settlementKind === "gateway_settlement_reference" &&
+    classified.settlementReference
+  ) {
+    try {
+      const transfer = await fetchGatewayX402Transfer(
+        classified.settlementReference,
+        options.expectedGatewayTransfer,
+        options.gatewayFetcher,
+      );
+      if (!transfer && options.strictGatewayResolution) {
+        throw new Error("Circle Gateway transfer reference was not found.");
+      }
+      gatewayTransferStatus = transfer?.status ?? null;
+      if (transfer?.txHash) {
+        if (
+          arcTxHash &&
+          transfer.txHash.toLowerCase() !== arcTxHash.toLowerCase()
+        ) {
+          throw new Error(
+            "Circle Gateway batch transaction hash does not match the stored payment evidence.",
+          );
+        }
+        arcTxHash = transfer.txHash;
+        resolvedFromGateway = true;
+      }
+    } catch (err) {
+      if (options.strictGatewayResolution) throw err;
+      console.warn(
+        "[settlement] Could not resolve Circle Gateway transfer:",
+        (err as Error).message,
+      );
+    }
+  }
 
   const base: SettlementProofColumns = {
     settlement_reference: classified.settlementReference,
     settlement_kind: classified.settlementKind,
-    settlement_status: classified.settlementStatus,
-    arc_tx_hash: classified.arcTxHash,
-    arc_chain_id:
-      classified.settlementKind === "arc_tx_hash" ? ARC_TESTNET_CHAIN_ID : null,
+    settlement_status: arcTxHash ? "arc_unverified" : classified.settlementStatus,
+    arc_tx_hash: arcTxHash,
+    arc_chain_id: arcTxHash ? ARC_TESTNET_CHAIN_ID : null,
     arc_block_number: null,
     arc_confirmed_at: null,
     settlement_checked_at: checkedAt,
   };
 
-  if (!classified.arcTxHash) return base;
+  if (!arcTxHash) return { columns: base, gatewayTransferStatus };
 
   try {
     const receipt = await publicClient.getTransactionReceipt({
-      hash: classified.arcTxHash as `0x${string}`,
+      hash: arcTxHash as `0x${string}`,
     });
 
     if (receipt.status !== "success") {
-      return { ...base, settlement_status: "arc_failed" };
+      return {
+        columns: { ...base, settlement_status: "arc_failed" },
+        gatewayTransferStatus,
+      };
+    }
+
+    if (
+      resolvedFromGateway &&
+      (!receipt.to || getAddress(receipt.to) !== getAddress(ARC_TESTNET_GATEWAY_WALLET))
+    ) {
+      console.warn(
+        "[settlement] Circle Gateway batch transaction targeted an unexpected contract.",
+      );
+      return { columns: base, gatewayTransferStatus };
     }
 
     let confirmedAt: string | null = null;
@@ -69,16 +154,19 @@ export async function buildSettlementProofColumns(
     }
 
     return {
-      ...base,
-      settlement_status: "arc_confirmed",
-      arc_block_number: receipt.blockNumber.toString(),
-      arc_confirmed_at: confirmedAt ?? checkedAt,
+      columns: {
+        ...base,
+        settlement_status: "arc_confirmed",
+        arc_block_number: receipt.blockNumber.toString(),
+        arc_confirmed_at: confirmedAt ?? checkedAt,
+      },
+      gatewayTransferStatus,
     };
   } catch (err) {
     console.warn(
       "[settlement] Could not verify Arc tx hash:",
       (err as Error).message,
     );
-    return base;
+    return { columns: base, gatewayTransferStatus };
   }
 }

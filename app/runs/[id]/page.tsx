@@ -69,7 +69,9 @@ async function RunReceiptContent({ params }: ReceiptPageProps) {
   if (!receipt) notFound();
 
   const payload = receipt.payload;
-  const paymentEvidence = await loadReceiptPaymentEvidence(payload);
+  const paymentEvidence = await loadReceiptPaymentEvidence(payload, {
+    refreshGateway: true,
+  });
   const isComparison = payload.kind === "comparison";
   const comparisonRows = isComparison ? comparisonRowsFromPayload(payload) : [];
   const agentRow = comparisonRows.find((row) => row.key === "reasoning-agent");
@@ -457,10 +459,35 @@ function PaymentEvidenceSection({
                 <div className="mt-3 space-y-1 text-zinc-500">
                   <div>payer <span className="font-mono text-zinc-300">{shortAddress(item.payer)}</span></div>
                   <div>status <span className="text-zinc-300">{settlementStatusLabel(item.settlementStatus)}</span></div>
+                  {item.gatewayTransferStatus && (
+                    <div>Circle batch <span className="text-zinc-300">{item.gatewayTransferStatus}</span></div>
+                  )}
                   <div>scheme <span className="text-zinc-300">{item.facilitatorRequirements?.scheme ?? "legacy record"}</span></div>
                   <div>asset <span className="font-mono text-zinc-300">{shortAddress(item.facilitatorRequirements?.asset)}</span></div>
                 </div>
                 {reference && <div className="mt-2"><SettlementReference tx={reference} /></div>}
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+                  {item.gatewayTransferUrl && (
+                    <a
+                      href={item.gatewayTransferUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-violet-300 underline decoration-violet-900 underline-offset-2"
+                    >
+                      Circle transfer status
+                    </a>
+                  )}
+                  {item.arcTxHash && settlementExplorerUrl(item.arcTxHash) && (
+                    <a
+                      href={settlementExplorerUrl(item.arcTxHash)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-teal-300 underline decoration-teal-900 underline-offset-2"
+                    >
+                      Shared Arc batch transaction
+                    </a>
+                  )}
+                </div>
                 <details className="mt-3 border-t border-zinc-800 pt-2 text-zinc-500">
                   <summary className="cursor-pointer text-zinc-400">Sanitized verification fields</summary>
                   <div className="mt-2 space-y-1 break-all font-mono text-[11px]">

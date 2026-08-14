@@ -156,7 +156,7 @@ different rail (Coinbase facilitator) from the Circle Gateway batching on Arc.
 ## Run it
 
 ### Prerequisites
-- Node.js v22+
+- Node.js v22.18+ (or any current Node release; Crux uses native TypeScript stripping)
 - A cloud [Supabase](https://supabase.com) project (free) — the seller's payment ledger
 - A [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) API key — routes the proven primary model
 - Optional: a [Gemini Developer API](https://ai.google.dev/gemini-api/docs/api-key) key for independent visitor inference and pre-payment fallback
@@ -250,9 +250,12 @@ agent topics, and public agent budget guard. Override the target with
   after the test if it was created only for maintenance.
 - Payment reconciliation runs daily through Vercel Cron at
   `/api/admin/reconcile-payments` (Hobby plan limit; use `*/30 * * * *` on Pro
-  if you want 30-minute checks). It scans recent `payment_events`, refreshes
-  stale settlement proof columns, re-verifies Arc transaction hashes, and alerts
-  if settlement records are missing, stale, failed, or inconsistent.
+  if you want 30-minute checks). It scans recent `payment_events`, asks Circle
+  for the current x402 transfer status, refreshes stale settlement proof columns,
+  re-verifies Arc batch transaction hashes, and alerts if settlement records are
+  missing, stale, failed, or inconsistent. Gateway nanopayments settle in batches:
+  the initial UUID is a Circle transfer reference, while the eventual Arc hash is
+  shared by every payment in that batch.
 - Set `CRON_SECRET` in Vercel production for the reconciliation route. Crux does
   not trust cron user-agent headers; reconciliation requires either
   `Authorization: Bearer $CRON_SECRET` or `CRUX_MAINTENANCE_TOKEN`.
@@ -282,6 +285,11 @@ npm run alerts:test         # send a protected operational-alert test
 npm run wallets:keygen      # generate a 32-byte visitor-wallet encryption key
 npm run wallets:encrypt     # backfill encrypted visitor-wallet key storage
 ```
+`external:pay-crux` prints Circle's transfer UUID immediately. Because Gateway
+settles nanopayments in batches, `gatewayStatus` may initially be `received` or
+`batched` and `arcTxHash` may be `null`; the printed Circle status URL and Crux
+proof URL expose the shared Arc batch hash once confirmation completes.
+
 Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`,
 `CRUX_DIRECT_GEMINI_MODEL`, `CRUX_DIRECT_GEMINI_FALLBACK_ENABLED`, `TOPIC`,
 `BUDGET`, `SEED`, `BASE_URL`.

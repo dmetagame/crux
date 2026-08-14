@@ -2,6 +2,10 @@ import { BatchEvmScheme, GatewayClient } from "@circle-fin/x402-batching/client"
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  fetchGatewayX402Transfer,
+  gatewayTransferUrl,
+} from "../lib/gateway-transfer.ts";
 import { parseAtomicAmount } from "../lib/usdc.ts";
 
 const ARC_NETWORK = "eip155:5042002";
@@ -103,13 +107,35 @@ if (!settlement.success || !settlement.transaction?.trim()) {
 
 const payer = privateKeyToAccount(privateKey).address;
 const proofUrl = `${baseUrl}/api/payments/by-reference/${encodeURIComponent(settlement.transaction)}`;
+const circleTransferUrl = gatewayTransferUrl(settlement.transaction);
+let gatewayStatus: string | null = null;
+let arcTxHash: string | null = null;
+try {
+  const transfer = await fetchGatewayX402Transfer(settlement.transaction, {
+    network: ARC_NETWORK,
+    payer,
+    payTo: gatewayRequirements.payTo,
+    amountAtomic: quotedAtomic.toString(),
+  });
+  gatewayStatus = transfer?.status ?? null;
+  arcTxHash = transfer?.txHash ?? null;
+} catch (error) {
+  console.warn(
+    `Payment succeeded, but Circle transfer status was not yet available: ${(error as Error).message}`,
+  );
+}
 
 console.log(JSON.stringify({
   payer,
   resource: resourceUrl,
   amountUsdc: formatAtomic(quotedAtomic),
   settlementReference: settlement.transaction,
+  gatewayStatus,
+  gatewayTransferUrl: circleTransferUrl,
+  arcTxHash,
   proofUrl,
+  settlementNote:
+    "Circle Gateway batches nanopayments asynchronously. The transfer URL and Crux proof resolve to a shared batch-level Arc transaction hash after Circle confirms the batch.",
   next:
     "Send the payer address and proofUrl to the Crux maintainer so the address can be explicitly attributed as an independent external x402 payer.",
 }, null, 2));

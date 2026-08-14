@@ -47,7 +47,8 @@ After your x402 client pays, the same URL returns the purchased JSON. These
 endpoints do not use a Crux API key.
 
 The repository also includes a bounded partner proof command. Run it from an
-independent wallet/repository, never with Crux's house key:
+independent wallet/repository on Node.js 22.18 or newer, never with Crux's house
+key:
 
 ```bash
 cat > .env.external.local <<'EOF'
@@ -61,11 +62,17 @@ npm run external:pay-crux
 `.env.external.local` is gitignored. The command defaults to the `$0.001` quote
 endpoint, refuses a higher quote or non-Crux origin, enforces an absolute
 `$0.10` test-USDC ceiling, signs the inspected challenge rather than refetching
-an unchecked price, and prints
-the payer address, settlement reference, and public sanitized proof URL. Send
-those three values to the Crux maintainer; after the address is explicitly added
+an unchecked price, and prints the payer address, settlement reference, Circle
+transfer-status URL, current batch status, any available Arc batch hash, and the
+public sanitized proof URL. Send the payer address and proof URL to the Crux
+maintainer; after the address is explicitly added
 to `CRUX_EXTERNAL_X402_PAYER_ADDRESSES`, `/api/stats` counts it as an independent
 external payer rather than guessing from unknown addresses.
+
+Circle returns a transfer UUID immediately because nanopayments are settled in
+batches. The command also prints Circle's transfer-status URL and the current
+`gatewayStatus`. After the batch is confirmed, the status endpoint and the Crux
+proof URL expose the shared Arc batch transaction hash.
 
 Useful paid surfaces:
 

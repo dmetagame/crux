@@ -32,6 +32,10 @@ import {
   parseGatewayFeeEstimate,
   parseWithdrawalUsdc,
 } from "../lib/gateway-withdrawal.ts";
+import {
+  gatewayTransferUrl,
+  parseGatewayX402Transfer,
+} from "../lib/gateway-transfer.ts";
 import { sanitizePaymentEvidenceRow } from "../lib/payment-evidence.ts";
 import { buildPaidEvidenceRecovery } from "../lib/paid-evidence-recovery.ts";
 import { classifyPaymentActor } from "../lib/payer-attribution.ts";
@@ -40,6 +44,7 @@ import { runRealResearchAgent } from "../lib/real-agent.ts";
 import { gatewayFundingPlan, gatewayRunReadiness } from "../lib/release-readiness.ts";
 import { aggregateRunMetrics } from "../lib/run-metrics.ts";
 import { settlementReferencesFromPayload } from "../lib/receipt-settlements.ts";
+import { resolveSettlementProof } from "../lib/settlement-verifier.ts";
 import { untrustedSourceData } from "../lib/untrusted-source.ts";
 import { visitorWalletReadiness } from "../lib/wallet-readiness.ts";
 import { addressFromPrivateKey, getHistoricalHouseAddresses, getHouseAddress } from "../lib/wallet-keys.ts";
@@ -673,6 +678,102 @@ test("null Arc proof metadata remains null instead of becoming zero", () => {
     facilitator_settle: { success: true },
   });
   assert.equal(evidence.arcChainId, null);
+});
+
+test("Circle Gateway transfer references resolve to shared Arc batch hashes", () => {
+  const reference = "e899bac2-f32a-4259-8294-99a7a599cb3a";
+  const payer = "0x1111111111111111111111111111111111111111";
+  const seller = "0x2222222222222222222222222222222222222222";
+  const txHash = `0x${"a".repeat(64)}`;
+  const transfer = parseGatewayX402Transfer(reference, {
+    id: reference,
+    status: "completed",
+    token: "USDC",
+    sendingNetwork: "eip155:5042002",
+    recipientNetwork: "eip155:5042002",
+    fromAddress: payer,
+    toAddress: seller,
+    amount: "1000",
+    nonce: `0x${"b".repeat(64)}`,
+    txHash,
+    createdAt: "2026-08-12T13:35:00.587Z",
+    updatedAt: "2026-08-12T13:51:04.100Z",
+  }, {
+    network: "eip155:5042002",
+    payer,
+    payTo: seller,
+    amountAtomic: "1000",
+  });
+
+  assert.equal(transfer.status, "completed");
+  assert.equal(transfer.txHash, txHash);
+  assert.equal(
+    gatewayTransferUrl(reference),
+    `https://gateway-api-testnet.circle.com/v1/x402/transfers/${reference}`,
+  );
+});
+
+test("Circle Gateway transfer parsing rejects mismatched payment evidence", () => {
+  const reference = "e899bac2-f32a-4259-8294-99a7a599cb3a";
+  assert.throws(
+    () => parseGatewayX402Transfer(reference, {
+      id: reference,
+      status: "received",
+      token: "USDC",
+      sendingNetwork: "eip155:5042002",
+      recipientNetwork: "eip155:5042002",
+      fromAddress: "0x1111111111111111111111111111111111111111",
+      toAddress: "0x2222222222222222222222222222222222222222",
+      amount: "1000",
+      nonce: `0x${"b".repeat(64)}`,
+      txHash: null,
+      createdAt: "2026-08-12T13:35:00.587Z",
+      updatedAt: "2026-08-12T13:35:00.587Z",
+    }, {
+      payer: "0x3333333333333333333333333333333333333333",
+    }),
+    /payer does not match/,
+  );
+});
+
+test("strict Circle Gateway reconciliation rejects an unknown transfer reference", async () => {
+  await assert.rejects(
+    resolveSettlementProof("e899bac2-f32a-4259-8294-99a7a599cb3a", {
+      resolveGatewayReference: true,
+      strictGatewayResolution: true,
+      gatewayFetcher: async () => new Response(null, { status: 404 }),
+    }),
+    /transfer reference was not found/,
+  );
+});
+
+test("strict Circle Gateway reconciliation rejects a changed batch hash", async () => {
+  const reference = "e899bac2-f32a-4259-8294-99a7a599cb3a";
+  await assert.rejects(
+    resolveSettlementProof(reference, {
+      resolveGatewayReference: true,
+      strictGatewayResolution: true,
+      knownArcTxHash: `0x${"a".repeat(64)}`,
+      gatewayFetcher: async () => new Response(JSON.stringify({
+        id: reference,
+        status: "completed",
+        token: "USDC",
+        sendingNetwork: "eip155:5042002",
+        recipientNetwork: "eip155:5042002",
+        fromAddress: "0x1111111111111111111111111111111111111111",
+        toAddress: "0x2222222222222222222222222222222222222222",
+        amount: "1000",
+        nonce: `0x${"b".repeat(64)}`,
+        txHash: `0x${"c".repeat(64)}`,
+        createdAt: "2026-08-12T13:35:00.587Z",
+        updatedAt: "2026-08-12T13:51:04.100Z",
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    }),
+    /batch transaction hash does not match/,
+  );
 });
 
 test("independent payment proof validates the complete Arc Gateway evidence chain", () => {

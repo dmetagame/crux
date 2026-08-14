@@ -8,8 +8,10 @@ import {
 } from "./settlement.ts";
 import {
   buildSettlementProofColumns,
+  resolveSettlementProof,
   type SettlementProofColumns,
 } from "./settlement-verifier.ts";
+import { getSellerAddress } from "./wallet-keys.ts";
 
 export type PaymentReconciliationIssueCode =
   | "missing_settlement_reference"
@@ -19,6 +21,9 @@ export type PaymentReconciliationIssueCode =
   | "arc_chain_mismatch"
   | "arc_tx_failed"
   | "arc_tx_unverified"
+  | "gateway_transfer_failed"
+  | "gateway_transfer_lookup_failed"
+  | "gateway_tx_missing"
   | "stale_settlement_check"
   | "unexpected_network"
   | "payment_event_update_failed";
@@ -53,6 +58,7 @@ type PaymentEventRow = {
   endpoint: string;
   payer: string;
   amount_usdc: string;
+  amount_atomic: string | null;
   network: string;
   gateway_tx: string | null;
   settlement_reference: string | null;
@@ -66,7 +72,7 @@ type PaymentEventRow = {
 };
 
 const PAYMENT_SELECT =
-  "id, created_at, endpoint, payer, amount_usdc, network, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, settlement_checked_at";
+  "id, created_at, endpoint, payer, amount_usdc, amount_atomic, network, gateway_tx, settlement_reference, settlement_kind, settlement_status, arc_tx_hash, arc_chain_id, arc_block_number, arc_confirmed_at, settlement_checked_at";
 const ARC_TESTNET_NETWORK = "eip155:5042002";
 const DEFAULT_LIMIT = 250;
 const DEFAULT_STALE_HOURS = 24;
@@ -86,6 +92,7 @@ export async function reconcilePayments(
   const { data, error } = await supabase
     .from("payment_events")
     .select(PAYMENT_SELECT)
+    .order("arc_tx_hash", { ascending: true, nullsFirst: true })
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -98,12 +105,12 @@ export async function reconcilePayments(
   let checked = 0;
   let updated = 0;
 
-  for (const row of rows) {
+  const results = await mapWithConcurrency(rows, 8, (row) =>
+    reconcilePaymentRow(supabase, row, { staleHours, dryRun }),
+  );
+
+  for (const rowIssues of results) {
     checked += 1;
-    const rowIssues = await reconcilePaymentRow(supabase, row, {
-      staleHours,
-      dryRun,
-    });
     if (rowIssues.updated) updated += 1;
     issues.push(...rowIssues.issues);
   }
@@ -168,9 +175,63 @@ async function reconcilePaymentRow(
     );
   }
 
-  const proof = await buildSettlementProofColumns(classified.settlementReference);
+  let resolution;
+  try {
+    resolution = await resolveSettlementProof(classified.settlementReference, {
+      resolveGatewayReference: true,
+      strictGatewayResolution: true,
+      expectedGatewayTransfer: {
+        network: row.network,
+        payer: row.payer,
+        payTo: safeSellerAddress(),
+        amountAtomic: row.amount_atomic ?? decimalToAtomic(row.amount_usdc),
+      },
+    });
+  } catch (error) {
+    const message = (error as Error).message;
+    issues.push(
+      issue(
+        row,
+        "gateway_transfer_lookup_failed",
+        /does not match|unexpected|invalid|missing/i.test(message) ? "critical" : "warning",
+        `Circle Gateway transfer lookup failed: ${message}`,
+        classified.settlementReference,
+      ),
+    );
+    resolution = {
+      columns: await buildSettlementProofColumns(classified.settlementReference),
+      gatewayTransferStatus: null,
+    };
+  }
+  const proof = resolution.columns;
   const expectedStatus = proof.settlement_status;
   const expectedArcHash = proof.arc_tx_hash;
+
+  if (resolution.gatewayTransferStatus === "failed") {
+    issues.push(
+      issue(
+        row,
+        "gateway_transfer_failed",
+        "critical",
+        "Circle Gateway reports that the x402 transfer failed.",
+        proof.settlement_reference,
+      ),
+    );
+  }
+  if (
+    ["confirmed", "completed"].includes(resolution.gatewayTransferStatus ?? "") &&
+    !expectedArcHash
+  ) {
+    issues.push(
+      issue(
+        row,
+        "gateway_tx_missing",
+        "warning",
+        "Circle Gateway reports completion without a batch transaction hash.",
+        proof.settlement_reference,
+      ),
+    );
+  }
 
   if (
     expectedArcHash &&
@@ -376,6 +437,42 @@ function countIssueCodes(issues: PaymentReconciliationIssue[]) {
     acc[issue.code] = (acc[issue.code] ?? 0) + 1;
     return acc;
   }, {});
+}
+
+function safeSellerAddress() {
+  try {
+    return getSellerAddress();
+  } catch {
+    return null;
+  }
+}
+
+function decimalToAtomic(value: string) {
+  if (!/^\d+(\.\d+)?$/.test(value.trim())) return null;
+  const [whole, fraction = ""] = value.trim().split(".");
+  return (BigInt(whole) * BigInt(1_000_000) + BigInt((fraction + "000000").slice(0, 6))).toString();
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  run: (value: T) => Promise<R>,
+) {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await run(values[index]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, () => worker()),
+  );
+  return results;
 }
 
 function isStale(value: string | null, staleHours: number) {

@@ -1,9 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ARC_TESTNET_CHAIN_ID,
   classifySettlementReference,
 } from "./settlement.ts";
+import { gatewayTransferUrl } from "./gateway-transfer.ts";
 import { settlementReferencesFromPayload } from "./receipt-settlements.ts";
+import { resolveSettlementProof } from "./settlement-verifier.ts";
 
 export type FacilitatorRequirementsEvidence = {
   scheme: string | null;
@@ -49,6 +52,8 @@ export type PaymentEvidence = {
   arcBlockNumber: string | null;
   arcConfirmedAt: string | null;
   settlementCheckedAt: string | null;
+  gatewayTransferStatus: string | null;
+  gatewayTransferUrl: string | null;
   facilitatorRequirements: FacilitatorRequirementsEvidence | null;
   facilitatorVerify: FacilitatorVerifyEvidence | null;
   facilitatorSettle: FacilitatorSettleEvidence | null;
@@ -59,11 +64,17 @@ const PROOF_SELECT =
 const LEGACY_SELECT =
   "id, created_at, endpoint, payer, amount_usdc, network, gateway_tx";
 
-export async function loadReceiptPaymentEvidence(payload: unknown) {
-  return loadPaymentEvidence(settlementReferencesFromPayload(payload));
+export async function loadReceiptPaymentEvidence(
+  payload: unknown,
+  options: { refreshGateway?: boolean } = {},
+) {
+  return loadPaymentEvidence(settlementReferencesFromPayload(payload), options);
 }
 
-export async function loadPaymentEvidence(references: string[]): Promise<PaymentEvidence[]> {
+export async function loadPaymentEvidence(
+  references: string[],
+  options: { refreshGateway?: boolean } = {},
+): Promise<PaymentEvidence[]> {
   const unique = [...new Set(references.map((value) => value.trim()).filter(Boolean))].slice(0, 100);
   if (unique.length === 0) return [];
 
@@ -97,8 +108,11 @@ export async function loadPaymentEvidence(references: string[]): Promise<Payment
       return dedupeRows(legacy.data ?? []).map(sanitizePaymentEvidenceRow);
     }
 
-    return dedupeRows([...(bySettlement.data ?? []), ...(byGateway.data ?? [])])
-      .map(sanitizePaymentEvidenceRow);
+    const rows = dedupeRows([...(bySettlement.data ?? []), ...(byGateway.data ?? [])]);
+    const refreshed = options.refreshGateway
+      ? await Promise.all(rows.map((row) => refreshGatewayEvidenceRow(supabase, row)))
+      : rows;
+    return refreshed.map(sanitizePaymentEvidenceRow);
   } catch (err) {
     console.warn("[receipt] Could not load payment evidence:", (err as Error).message);
     return [];
@@ -129,6 +143,8 @@ export function sanitizePaymentEvidenceRow(row: Record<string, unknown>): Paymen
     arcBlockNumber: row.arc_block_number == null ? null : text(String(row.arc_block_number), 64),
     arcConfirmedAt: text(row.arc_confirmed_at, 128),
     settlementCheckedAt: text(row.settlement_checked_at, 128),
+    gatewayTransferStatus: text(row.gateway_transfer_status, 64),
+    gatewayTransferUrl: gatewayTransferUrl(settlementReference),
     facilitatorRequirements: requirements
       ? {
           scheme: text(requirements.scheme, 64),
@@ -163,6 +179,86 @@ export function sanitizePaymentEvidenceRow(row: Record<string, unknown>): Paymen
         }
       : null,
   };
+}
+
+async function refreshGatewayEvidenceRow(
+  supabase: SupabaseClient,
+  row: Record<string, unknown>,
+) {
+  const reference = text(row.settlement_reference, 512) ?? text(row.gateway_tx, 512);
+  const classified = classifySettlementReference(reference);
+  if (
+    !reference ||
+    classified.settlementKind !== "gateway_settlement_reference"
+  ) {
+    return row;
+  }
+
+  const requirements = recordValue(row.facilitator_requirements);
+  const resolution = await resolveSettlementProof(reference, {
+    resolveGatewayReference: true,
+    expectedGatewayTransfer: {
+      network: text(row.network, 128) ?? text(requirements?.network, 128),
+      payer: text(row.payer, 128),
+      payTo: text(requirements?.payTo, 128),
+      amountAtomic:
+        scalarText(row.amount_atomic, 64) ?? text(requirements?.amount, 64),
+    },
+    knownArcTxHash: text(row.arc_tx_hash, 128),
+  });
+  const storedArcHash = text(row.arc_tx_hash, 128);
+  const storedArcConfirmed =
+    storedArcHash && text(row.settlement_status, 64) === "arc_confirmed";
+  const refreshedArcTerminal = ["arc_confirmed", "arc_failed"].includes(
+    resolution.columns.settlement_status,
+  );
+  const applyResolution = !storedArcConfirmed || refreshedArcTerminal;
+  const merged = {
+    ...row,
+    ...(applyResolution ? resolution.columns : {}),
+    gateway_transfer_status: resolution.gatewayTransferStatus,
+  };
+
+  const id = text(row.id, 128);
+  if (
+    id &&
+    resolution.columns.arc_tx_hash &&
+    applyResolution &&
+    settlementProofChanged(row, resolution.columns)
+  ) {
+    const { error } = await supabase
+      .from("payment_events")
+      .update(resolution.columns)
+      .eq("id", id);
+    if (error) {
+      console.warn(
+        "[receipt] Could not persist refreshed settlement evidence:",
+        error.message,
+      );
+    }
+  }
+
+  return merged;
+}
+
+function settlementProofChanged(
+  row: Record<string, unknown>,
+  columns: Awaited<ReturnType<typeof resolveSettlementProof>>["columns"],
+) {
+  return (
+    text(row.settlement_reference, 512) !== columns.settlement_reference ||
+    text(row.settlement_kind, 64) !== columns.settlement_kind ||
+    text(row.settlement_status, 64) !== columns.settlement_status ||
+    text(row.arc_tx_hash, 128)?.toLowerCase() !== columns.arc_tx_hash?.toLowerCase() ||
+    finiteNumber(row.arc_chain_id) !== columns.arc_chain_id ||
+    scalarText(row.arc_block_number, 64) !== columns.arc_block_number ||
+    normalizedTimestamp(row.arc_confirmed_at) !== normalizedTimestamp(columns.arc_confirmed_at)
+  );
+}
+
+function normalizedTimestamp(value: unknown) {
+  const timestamp = typeof value === "string" ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function dedupeRows(rows: Record<string, unknown>[]) {

@@ -70,11 +70,11 @@ export function settlementLabel(value: string, chars = 8) {
 export function settlementStatusLabel(status?: string | null) {
   switch (status) {
     case "arc_confirmed":
-      return "Arc confirmed";
+      return "Arc batch confirmed";
     case "arc_failed":
-      return "Arc failed";
+      return "Arc batch failed";
     case "arc_unverified":
-      return "Arc unverified";
+      return "Arc batch unverified";
     case "gateway_reference_recorded":
       return "Gateway reference recorded";
     default:

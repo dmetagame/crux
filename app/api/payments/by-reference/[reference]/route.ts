@@ -26,7 +26,9 @@ export async function GET(
     return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
   }
 
-  const evidence = await loadPaymentEvidence([normalized]);
+  const evidence = await loadPaymentEvidence([normalized], {
+    refreshGateway: true,
+  });
   if (evidence.length === 0) {
     return NextResponse.json(
       { error: "Payment proof not found" },
