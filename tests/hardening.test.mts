@@ -5,6 +5,11 @@ import {
   modelsUsedFromSteps,
 } from "../lib/agent-models.ts";
 import {
+  DEFAULT_AGENT_MODEL,
+  DEFAULT_AGENT_MODEL_FALLBACKS,
+  configuredDefaultAgentModel,
+} from "../lib/agent-model-defaults.ts";
+import {
   modelsUsedForInference,
   runAgentInferenceWithFallback,
   shouldUseDirectGeminiFallback,
@@ -48,12 +53,29 @@ import { normalizeRealPurchasePlan } from "../lib/real-research-plan.ts";
 test("Gateway fallback order excludes the requested primary and duplicates", () => {
   withEnv({
     CRUX_AGENT_MODEL_FALLBACKS:
-      "anthropic/claude-haiku-4.5, google/gemini-3.5-flash, google/gemini-3.5-flash, openai/gpt-oss-20b",
+      "openai/gpt-oss-120b, meta/llama-3.3-70b, meta/llama-3.3-70b, openai/gpt-oss-20b",
   }, () => {
-    assert.deepEqual(agentFallbackModels("anthropic/claude-haiku-4.5"), [
-      "google/gemini-3.5-flash",
+    assert.deepEqual(agentFallbackModels("openai/gpt-oss-120b"), [
+      "meta/llama-3.3-70b",
       "openai/gpt-oss-20b",
     ]);
+  });
+});
+
+test("the default agent model is explicit and free-tier compatible", () => {
+  assert.equal(DEFAULT_AGENT_MODEL, "openai/gpt-oss-120b");
+});
+
+test("agent model defaults remain configurable without code changes", () => {
+  withEnv({
+    CRUX_DEFAULT_AGENT_MODEL: "anthropic/claude-haiku-4.5",
+    CRUX_AGENT_MODEL_FALLBACKS: undefined,
+  }, () => {
+    assert.equal(configuredDefaultAgentModel(), "anthropic/claude-haiku-4.5");
+    assert.deepEqual(
+      agentFallbackModels("anthropic/claude-haiku-4.5"),
+      [...DEFAULT_AGENT_MODEL_FALLBACKS],
+    );
   });
 });
 

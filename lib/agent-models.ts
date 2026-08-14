@@ -1,7 +1,8 @@
-const DEFAULT_FALLBACK_MODELS = [
-  "google/gemini-3.5-flash",
-  "openai/gpt-oss-20b",
-];
+import {
+  DEFAULT_AGENT_MODEL_FALLBACKS,
+} from "./agent-model-defaults.ts";
+
+const DEFAULT_FALLBACK_MODELS = [...DEFAULT_AGENT_MODEL_FALLBACKS];
 
 type ModelStep = {
   model?: { modelId?: unknown };

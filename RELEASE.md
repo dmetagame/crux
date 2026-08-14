@@ -23,14 +23,17 @@ release.
    npm run check:release
    ```
    It exits nonzero for core blockers, checks the production API and x402
-   challenge, models the exact automatic Gateway-deposit threshold, and
+   challenge, verifies raw receipt rows are not anonymously readable, models
+   the exact automatic Gateway-deposit threshold, and
    performs a bounded no-payment tool loop through the real model/fallback
    route. External-payer proof and seller withdrawal gas are warnings because
    neither blocks the core RFB-01
    product. `--skip-ai` is available only for non-agent infrastructure releases.
    A free-tier AI route can pass once and rate-limit the next call; treat any
-   failure as a real judging-window blocker and add paid Gateway credits rather
-   than weakening the check.
+   failure as a real judging-window blocker. First verify the configured
+   Hobby-compatible model cascade and independent pre-spend fallback. Add paid
+   Gateway credits only when those tested routes cannot sustain the judging
+   window; never weaken the check or retry after settlement.
 5. A minimal AI probe cannot guarantee a complete multi-step tool loop. Before
    a live judging window, also run one capped operator/trusted-agent journey and
    inspect its durable receipt.

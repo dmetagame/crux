@@ -286,6 +286,11 @@ Useful env overrides: `MODEL`, `CRUX_AGENT_MODEL_FALLBACKS`,
 `CRUX_DIRECT_GEMINI_MODEL`, `CRUX_DIRECT_GEMINI_FALLBACK_ENABLED`, `TOPIC`,
 `BUDGET`, `SEED`, `BASE_URL`.
 
+The default Gateway model is `openai/gpt-oss-120b`, which is the tested
+Hobby/free-credit route. Paid Gateway accounts can set `CRUX_DEFAULT_AGENT_MODEL`
+to a stronger model such as `anthropic/claude-haiku-4.5`; keep the model in
+`CRUX_AGENT_MODEL_ALLOWLIST` when public agent access is enabled.
+
 For production deploys, use [RELEASE.md](./RELEASE.md) so Vercel deploys,
 Supabase migrations, smoke checks, and short-lived secrets are tracked together.
 

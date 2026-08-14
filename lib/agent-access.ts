@@ -1,4 +1,5 @@
 import { safeEqualHex, sha256Hex } from "@/lib/access-crypto";
+import { configuredDefaultAgentModel } from "@/lib/agent-model-defaults";
 import { adminSessionFromCookieHeader, isAdminSession } from "@/lib/admin-auth";
 import {
   acquireRunLock,
@@ -51,7 +52,7 @@ type HouseWalletActor =
 
 export type AgentRunGuard = GuardSuccess | GuardFailure;
 
-const DEFAULT_MODELS = ["anthropic/claude-haiku-4.5"];
+const DEFAULT_MODELS = [configuredDefaultAgentModel()];
 const ALL_AGENT_SCOPES: AgentScope[] = ["agent:run", "agent:real", "agent:baseline"];
 
 export async function guardAgentRun(

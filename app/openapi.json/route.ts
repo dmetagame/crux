@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { runStaleTimeoutSeconds } from "@/lib/run-receipts";
+import { configuredDefaultAgentModel } from "@/lib/agent-model-defaults";
 
 type OpenApiRunnerTool = {
   post: {
@@ -232,7 +233,7 @@ function realRunnerTool(publicHouseWalletRunsEnabled: boolean) {
   ];
   tool.post.requestBody = jsonRequestBody({
     subject: { type: "string", description: "Company, project, person, or topic to research." },
-    model: { type: "string", default: "anthropic/claude-haiku-4.5" },
+    model: { type: "string", default: configuredDefaultAgentModel() },
     budget: { type: "number", default: 0.03, maximum: 1 },
     walletId: {
       type: ["string", "null"],
@@ -273,7 +274,7 @@ function runnerTool(
             })
           : jsonRequestBody({
               topic: { type: "string", default: "Northwind Logistics" },
-              model: { type: "string", default: "anthropic/claude-haiku-4.5" },
+              model: { type: "string", default: configuredDefaultAgentModel() },
               budget: { type: "number", default: 0.05, maximum: 1 },
               seed: { type: "string", default: "demo" },
             }),

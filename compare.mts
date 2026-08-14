@@ -9,8 +9,9 @@ import { runResearchAgent, type RunResult, type AgentEvent } from "./lib/agent.t
 import { runBaseline } from "./lib/baseline.ts";
 import { scoreBrief } from "./lib/score.ts";
 import { requireHousePrivateKey } from "./lib/wallet-keys.ts";
+import { configuredDefaultAgentModel } from "./lib/agent-model-defaults.ts";
 
-const MODEL = process.env.MODEL ?? "anthropic/claude-haiku-4.5";
+const MODEL = process.env.MODEL ?? configuredDefaultAgentModel();
 const TOPIC = process.env.TOPIC ?? "Northwind Logistics";
 const BUDGET = parseFloat(process.env.BUDGET ?? "0.05");
 const BASE = process.env.BASE_URL ?? "http://localhost:3001";

@@ -1,5 +1,6 @@
 import { generateText, stepCountIs, tool } from "ai";
 import { GatewayClient } from "@circle-fin/x402-batching/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createPublicClient, erc20Abi, formatEther, formatUnits, http } from "viem";
 import { z } from "zod";
 import {
@@ -15,6 +16,7 @@ import {
   type HexAddress,
   type HexPrivateKey,
 } from "../lib/wallet-keys.ts";
+import { configuredDefaultAgentModel } from "../lib/agent-model-defaults.ts";
 
 type Severity = "PASS" | "WARN" | "BLOCK";
 const results: { severity: Severity; name: string; detail: string }[] = [];
@@ -30,6 +32,7 @@ const publicClient = createPublicClient({ transport: http(rpc) });
 const budgetUsdc = positiveNumber(process.env.CRUX_PREFLIGHT_HOUSE_BUDGET_USDC, 0.05);
 
 await checkProduction();
+await checkDatabasePrivacy();
 await checkWallets();
 await checkAi();
 printResults();
@@ -68,6 +71,52 @@ async function checkProduction() {
     pass("x402 seller", "production quote endpoint advertises a payment challenge");
   } catch (error) {
     block("production", (error as Error).message);
+  }
+}
+
+async function checkDatabasePrivacy() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!url || !publishableKey || !serviceRoleKey) {
+    block(
+      "receipt privacy migration",
+      "Supabase URL, publishable key, and service-role key are required to verify production RLS.",
+    );
+    return;
+  }
+
+  try {
+    const options = { auth: { persistSession: false, autoRefreshToken: false } };
+    const admin = createSupabaseClient(url, serviceRoleKey, options);
+    const anonymous = createSupabaseClient(url, publishableKey, options);
+    const { data: receipt, error: adminError } = await admin
+      .from("run_receipts")
+      .select("id")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (adminError) throw new Error(`service-role receipt probe failed: ${adminError.message}`);
+    if (!receipt?.id) {
+      warn("receipt privacy migration", "no production receipt exists to exercise anonymous RLS");
+      return;
+    }
+
+    const { data: publicRows, error: publicError } = await anonymous
+      .from("run_receipts")
+      .select("id")
+      .eq("id", receipt.id);
+    if (publicError) throw new Error(`anonymous receipt probe failed: ${publicError.message}`);
+    if ((publicRows ?? []).length > 0) {
+      block(
+        "receipt privacy migration",
+        "raw run_receipts are still anonymously readable; apply 20260310000011_restrict_raw_run_receipts.sql",
+      );
+      return;
+    }
+    pass("receipt privacy migration", "raw run_receipts are restricted to the sanitized app/API projection");
+  } catch (error) {
+    block("receipt privacy migration", (error as Error).message);
   }
 }
 
@@ -134,7 +183,7 @@ async function checkAi() {
     return;
   }
 
-  const model = process.env.CRUX_PREFLIGHT_MODEL?.trim() || "anthropic/claude-haiku-4.5";
+  const model = process.env.CRUX_PREFLIGHT_MODEL?.trim() || configuredDefaultAgentModel();
   const timeoutMs = positiveInteger(process.env.CRUX_PREFLIGHT_AI_TIMEOUT_MS, 50_000);
   let toolCalled = false;
   try {
@@ -147,6 +196,7 @@ async function checkAi() {
       run: (attempt) => generateText({
         model: attempt.model,
         prompt: "Call release_ready exactly once, then reply READY.",
+        toolChoice: { type: "tool", toolName: "release_ready" },
         tools: {
           release_ready: tool({
             description: "Confirms that the Crux agent tool loop is available.",
@@ -157,7 +207,7 @@ async function checkAi() {
             },
           }),
         },
-        stopWhen: stepCountIs(2),
+        stopWhen: [() => toolCalled, stepCountIs(2)],
         maxOutputTokens: 64,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(timeoutMs),
